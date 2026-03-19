@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings } from 'lucide-react';
+import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home } from 'lucide-react';
 import WeeklyPlan from './components/WeeklyPlan';
 import GroceryList from './components/GroceryList';
 import Principles from './components/Principles';
@@ -8,6 +8,7 @@ import GrowthTracker from './components/GrowthTracker';
 import Auth from './components/Auth';
 import Todos from './components/Todos';
 import ProfileSettings from './components/ProfileSettings';
+import Dashboard from './components/Dashboard';
 import { api, getToken, removeToken } from './api';
 
 interface UserProfile {
@@ -18,7 +19,7 @@ interface UserProfile {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('principles');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -112,6 +113,7 @@ function App() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'dashboard': return <Dashboard childName={userProfile?.childName} />;
       case 'principles': return <Principles />;
       case 'plan': return <WeeklyPlan />;
       case 'stats': return <Stats />;
@@ -168,6 +170,12 @@ function App() {
             <div className="flex items-center gap-3 min-w-0 lg:flex-1 lg:justify-end">
               <div className="w-full overflow-x-auto hide-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 lg:w-auto">
                 <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max lg:w-auto mx-auto lg:mx-0">
+                  <TabButton 
+                    active={activeTab === 'dashboard'} 
+                    onClick={() => setActiveTab('dashboard')} 
+                    icon={<Home size={16} />} 
+                    label="总览" 
+                  />
                   <TabButton 
                     active={activeTab === 'principles'} 
                     onClick={() => setActiveTab('principles')} 
