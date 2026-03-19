@@ -8,9 +8,7 @@ import GrowthTracker from './components/GrowthTracker';
 import Auth from './components/Auth';
 import Todos from './components/Todos';
 import ProfileSettings from './components/ProfileSettings';
-import { auth, logout, db, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { api, getToken, removeToken } from './api';
 
 interface UserProfile {
   childName?: string;
@@ -21,39 +19,48 @@ interface UserProfile {
 
 function App() {
   const [activeTab, setActiveTab] = useState('principles');
-  const [user, setUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    let unsubscribeProfile: (() => void) | undefined;
-    
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        const docRef = doc(db, 'users', currentUser.uid);
-        unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data() as UserProfile);
-          }
-          setLoading(false);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-          setLoading(false);
-        });
+    const checkAuth = async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const profile = await api.getProfile();
+          setUserProfile(profile);
+          setIsAuthenticated(true);
+        } catch (err) {
+          console.error('Failed to fetch profile', err);
+          removeToken();
+          setIsAuthenticated(false);
+        }
       } else {
-        if (unsubscribeProfile) unsubscribeProfile();
-        setUserProfile(null);
-        setLoading(false);
+        setIsAuthenticated(false);
       }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
+      setLoading(false);
     };
+
+    checkAuth();
   }, []);
+
+  const handleLogin = async () => {
+    try {
+      const profile = await api.getProfile();
+      setUserProfile(profile);
+      setIsAuthenticated(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const logout = () => {
+    removeToken();
+    setIsAuthenticated(false);
+    setUserProfile(null);
+  };
 
   const calculateAge = (birthDateString?: string) => {
     if (!birthDateString) return '';
@@ -99,8 +106,8 @@ function App() {
     );
   }
 
-  if (!user) {
-    return <Auth />;
+  if (!isAuthenticated) {
+    return <Auth onLogin={handleLogin} />;
   }
 
   const renderContent = () => {
@@ -233,7 +240,7 @@ function App() {
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)} 
         userProfile={userProfile} 
-        userId={user.uid} 
+        onProfileUpdate={setUserProfile}
       />
     </div>
   );

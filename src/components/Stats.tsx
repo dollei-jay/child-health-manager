@@ -1,34 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { getMonthDates } from '../utils';
 import { Trophy, Star, Target, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { api, getToken } from '../api';
 
 export default function Stats() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [checklistData, setChecklistData] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
-  const userId = auth.currentUser?.uid;
+  const isAuthenticated = !!getToken();
 
   useEffect(() => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
 
-    const checklistRef = doc(db, `users/${userId}/checklist/current`);
-
-    const unsubscribe = onSnapshot(checklistRef, (docSnap) => {
-      if (docSnap.exists()) {
-        try {
-          setChecklistData(JSON.parse(docSnap.data().checkedItems));
-        } catch (e) {
-          console.error("Error parsing checklist data", e);
+    const fetchChecklist = async () => {
+      try {
+        const res = await api.getChecklist();
+        if (res.checkedItems) {
+          try {
+            setChecklistData(JSON.parse(res.checkedItems));
+          } catch (e) {
+            console.error("Error parsing checklist data", e);
+          }
         }
+      } catch (error) {
+        console.error("Error fetching checklist:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/checklist/current`));
+    };
 
-    return () => unsubscribe();
-  }, [userId]);
+    fetchChecklist();
+  }, [isAuthenticated]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();

@@ -10,8 +10,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { api, getToken } from '../api';
 
 interface GrowthRecord {
   id: string;
@@ -33,60 +32,58 @@ export default function GrowthTracker() {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
 
-  const userId = auth.currentUser?.uid;
+  const isAuthenticated = !!getToken();
+
+  const fetchRecords = async () => {
+    try {
+      const data = await api.getGrowthRecords();
+      setRecords(data);
+    } catch (error) {
+      console.error("Error fetching growth records:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!userId) return;
-
-    const recordsRef = collection(db, `users/${userId}/growthRecords`);
-    const q = query(recordsRef, orderBy('date', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedRecords: GrowthRecord[] = [];
-      snapshot.forEach((doc) => {
-        loadedRecords.push({ id: doc.id, ...doc.data() } as GrowthRecord);
-      });
-      setRecords(loadedRecords);
-      setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/growthRecords`));
-
-    return () => unsubscribe();
-  }, [userId]);
+    if (!isAuthenticated) return;
+    fetchRecords();
+  }, [isAuthenticated]);
 
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId || !date || !height || !weight) return;
+    if (!isAuthenticated || !date || !height || !weight) return;
 
     const h = parseFloat(height);
     const w = parseFloat(weight);
     if (isNaN(h) || isNaN(w)) return;
 
     const bmi = (w / ((h / 100) * (h / 100))).toFixed(1);
-    const recordId = Date.now().toString();
 
     const newRecord = {
       date,
       height: h,
       weight: w,
-      bmi,
-      createdAt: new Date().toISOString()
+      bmi
     };
 
     try {
-      await setDoc(doc(db, `users/${userId}/growthRecords/${recordId}`), newRecord);
+      await api.createGrowthRecord(newRecord);
       setHeight('');
       setWeight('');
+      fetchRecords(); // Refresh list
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${userId}/growthRecords/${recordId}`);
+      console.error("Error adding growth record:", error);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
     try {
-      await deleteDoc(doc(db, `users/${userId}/growthRecords/${id}`));
+      await api.deleteGrowthRecord(id);
+      fetchRecords(); // Refresh list
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${userId}/growthRecords/${id}`);
+      console.error("Error deleting growth record:", error);
     }
   };
 

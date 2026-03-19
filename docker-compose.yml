@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: qinqin_baby_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=your-super-secret-jwt-key-for-local-nas # 请在群晖中修改为一个复杂的随机字符串
+    volumes:
+      - ./data:/app/data # 将数据库挂载到宿主机，防止重启丢失数据

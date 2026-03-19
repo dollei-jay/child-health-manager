@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { weeklyPlan as defaultPlan, dayColors } from '../data';
 import { Activity, Lightbulb, Utensils, CheckCircle2, RotateCcw, Download, Upload, Edit2, Save, X } from 'lucide-react';
 import { getWeekDates } from '../utils';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { api, getToken } from '../api';
 
 export default function WeeklyPlan() {
   const [planData, setPlanData] = useState(defaultPlan);
@@ -14,62 +13,58 @@ export default function WeeklyPlan() {
   const [loading, setLoading] = useState(true);
 
   const weekDates = getWeekDates();
-  const userId = auth.currentUser?.uid;
+  const isAuthenticated = !!getToken();
 
   useEffect(() => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
 
-    const planRef = doc(db, `users/${userId}/weeklyPlan/current`);
-    const checklistRef = doc(db, `users/${userId}/checklist/current`);
+    const fetchData = async () => {
+      try {
+        const [planRes, checklistRes] = await Promise.all([
+          api.getWeeklyPlan(),
+          api.getChecklist()
+        ]);
 
-    const unsubPlan = onSnapshot(planRef, (docSnap) => {
-      if (docSnap.exists()) {
-        try {
-          setPlanData(JSON.parse(docSnap.data().planData));
-        } catch (e) {
-          console.error("Error parsing plan data", e);
+        if (planRes.planData) {
+          try {
+            setPlanData(JSON.parse(planRes.planData));
+          } catch (e) {
+            console.error("Error parsing plan data", e);
+          }
         }
-      }
-      setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/weeklyPlan/current`));
 
-    const unsubChecklist = onSnapshot(checklistRef, (docSnap) => {
-      if (docSnap.exists()) {
-        try {
-          setCheckedItems(JSON.parse(docSnap.data().checkedItems));
-        } catch (e) {
-          console.error("Error parsing checklist data", e);
+        if (checklistRes.checkedItems) {
+          try {
+            setCheckedItems(JSON.parse(checklistRes.checkedItems));
+          } catch (e) {
+            console.error("Error parsing checklist data", e);
+          }
         }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/checklist/current`));
-
-    return () => {
-      unsubPlan();
-      unsubChecklist();
     };
-  }, [userId]);
+
+    fetchData();
+  }, [isAuthenticated]);
 
   const savePlanToFirebase = async (newPlanData: any) => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
     try {
-      await setDoc(doc(db, `users/${userId}/weeklyPlan/current`), {
-        planData: JSON.stringify(newPlanData),
-        updatedAt: new Date().toISOString()
-      });
+      await api.saveWeeklyPlan(JSON.stringify(newPlanData));
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${userId}/weeklyPlan/current`);
+      console.error("Error saving plan data:", error);
     }
   };
 
   const saveChecklistToFirebase = async (newChecklist: any) => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
     try {
-      await setDoc(doc(db, `users/${userId}/checklist/current`), {
-        checkedItems: JSON.stringify(newChecklist),
-        updatedAt: new Date().toISOString()
-      });
+      await api.saveChecklist(JSON.stringify(newChecklist));
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${userId}/checklist/current`);
+      console.error("Error saving checklist data:", error);
     }
   };
 

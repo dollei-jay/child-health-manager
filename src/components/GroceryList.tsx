@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { groceryList as defaultList } from '../data';
 import { Leaf, Egg, Wheat, Cherry, Edit2, Save, X } from 'lucide-react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { api, getToken } from '../api';
 
 export default function GroceryList() {
   const [listData, setListData] = useState(defaultList);
@@ -10,36 +9,37 @@ export default function GroceryList() {
   const [editForm, setEditForm] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const userId = auth.currentUser?.uid;
+  const isAuthenticated = !!getToken();
 
   useEffect(() => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
 
-    const listRef = doc(db, `users/${userId}/groceryList/current`);
-
-    const unsubscribe = onSnapshot(listRef, (docSnap) => {
-      if (docSnap.exists()) {
-        try {
-          setListData(JSON.parse(docSnap.data().listData));
-        } catch (e) {
-          console.error("Error parsing grocery list data", e);
+    const fetchList = async () => {
+      try {
+        const res = await api.getGroceryList();
+        if (res.listData) {
+          try {
+            setListData(JSON.parse(res.listData));
+          } catch (e) {
+            console.error("Error parsing grocery list data", e);
+          }
         }
+      } catch (error) {
+        console.error("Error fetching grocery list:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/groceryList/current`));
+    };
 
-    return () => unsubscribe();
-  }, [userId]);
+    fetchList();
+  }, [isAuthenticated]);
 
   const saveListToFirebase = async (newListData: any) => {
-    if (!userId) return;
+    if (!isAuthenticated) return;
     try {
-      await setDoc(doc(db, `users/${userId}/groceryList/current`), {
-        listData: JSON.stringify(newListData),
-        updatedAt: new Date().toISOString()
-      });
+      await api.saveGroceryList(JSON.stringify(newListData));
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${userId}/groceryList/current`);
+      console.error("Error saving grocery list data:", error);
     }
   };
 

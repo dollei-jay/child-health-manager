@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, User, Calendar, Activity } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { api } from '../api';
 
 interface ProfileSettingsProps {
   isOpen: boolean;
   onClose: () => void;
   userProfile: any;
-  userId: string;
+  onProfileUpdate: (profile: any) => void;
 }
 
-export default function ProfileSettings({ isOpen, onClose, userProfile, userId }: ProfileSettingsProps) {
+export default function ProfileSettings({ isOpen, onClose, userProfile, onProfileUpdate }: ProfileSettingsProps) {
   const [childName, setChildName] = useState('');
   const [childBirthDate, setChildBirthDate] = useState('');
   const [childGender, setChildGender] = useState('girl');
@@ -32,15 +31,17 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, userId }
     e.preventDefault();
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', userId), {
+      const updatedProfile = {
         childName,
         childBirthDate,
         childGender,
         childGoal
-      });
+      };
+      await api.updateProfile(updatedProfile);
+      onProfileUpdate({ ...userProfile, ...updatedProfile });
       onClose();
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+      console.error('Failed to update profile', error);
     } finally {
       setLoading(false);
     }

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { api } from '../api';
 
 interface Todo {
-  id: string;
+  id: number;
   text: string;
   completed: boolean;
   createdAt: string;
@@ -16,61 +15,48 @@ export default function Todos() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const q = query(
-      collection(db, `users/${auth.currentUser.uid}/todos`),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const todosData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Todo[];
-      setTodos(todosData);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `users/${auth.currentUser?.uid}/todos`);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    fetchTodos();
   }, []);
+
+  const fetchTodos = async () => {
+    try {
+      const data = await api.getTodos();
+      setTodos(data);
+    } catch (error) {
+      console.error('Failed to fetch todos', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTodo.trim() || !auth.currentUser) return;
+    if (!newTodo.trim()) return;
 
     try {
-      await addDoc(collection(db, `users/${auth.currentUser.uid}/todos`), {
-        text: newTodo.trim(),
-        completed: false,
-        createdAt: new Date().toISOString()
-      });
+      const addedTodo = await api.createTodo(newTodo.trim());
+      setTodos([addedTodo, ...todos]);
       setNewTodo('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `users/${auth.currentUser.uid}/todos`);
+      console.error('Failed to add todo', error);
     }
   };
 
-  const toggleTodo = async (id: string, completed: boolean) => {
-    if (!auth.currentUser) return;
+  const toggleTodo = async (id: number, completed: boolean) => {
     try {
-      await updateDoc(doc(db, `users/${auth.currentUser.uid}/todos`, id), {
-        completed: !completed
-      });
+      await api.updateTodo(id, !completed);
+      setTodos(todos.map(t => t.id === id ? { ...t, completed: !completed } : t));
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${auth.currentUser.uid}/todos/${id}`);
+      console.error('Failed to update todo', error);
     }
   };
 
-  const deleteTodo = async (id: string) => {
-    if (!auth.currentUser) return;
+  const deleteTodo = async (id: number) => {
     try {
-      await deleteDoc(doc(db, `users/${auth.currentUser.uid}/todos`, id));
+      await api.deleteTodo(id);
+      setTodos(todos.filter(t => t.id !== id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `users/${auth.currentUser.uid}/todos/${id}`);
+      console.error('Failed to delete todo', error);
     }
   };
 
