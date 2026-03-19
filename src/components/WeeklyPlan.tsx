@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { weeklyPlan as defaultPlan, dayColors } from '../data';
-import { Activity, Lightbulb, Utensils, CheckCircle2, RotateCcw, Download, Upload, Edit2, Save, X } from 'lucide-react';
+import { Activity, Lightbulb, Utensils, CheckCircle2, RotateCcw, Download, Upload, Edit2, Save, X, Wand2 } from 'lucide-react';
 import { getWeekDates } from '../utils';
 import { api, getToken } from '../api';
 
@@ -98,6 +98,52 @@ export default function WeeklyPlan() {
     { id: 'sleep', label: '早睡' }
   ];
 
+  type TemplateType = 'standard' | 'light' | 'outdoor';
+
+  const buildTemplate = (templateType: TemplateType) => {
+    const base = JSON.parse(JSON.stringify(defaultPlan));
+
+    if (templateType === 'light') {
+      return base.map((day: any) => ({
+        ...day,
+        exercise: [
+          '轻量快走 30分钟',
+          '舒展拉伸 10分钟'
+        ],
+        suggestion: `${day.suggestion}（本周采用轻量执行版，重在持续）`
+      }));
+    }
+
+    if (templateType === 'outdoor') {
+      return base.map((day: any) => {
+        if (day.id === 'sat' || day.id === 'sun') {
+          return {
+            ...day,
+            exercise: ['户外活动 90–120分钟（步行/骑行/球类）'],
+            suggestion: '优先户外活动，保持补水，不带高糖零食。'
+          };
+        }
+
+        return {
+          ...day,
+          exercise: [
+            '日常步行 40分钟',
+            '轻体能训练 15分钟',
+            '拉伸 10分钟'
+          ]
+        };
+      });
+    }
+
+    return base;
+  };
+
+  const applyTemplate = async (templateType: TemplateType) => {
+    const nextPlan = buildTemplate(templateType);
+    setPlanData(nextPlan);
+    await savePlanToFirebase(nextPlan);
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
@@ -177,6 +223,24 @@ export default function WeeklyPlan() {
             className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 text-xs sm:text-sm font-bold text-stone-500 bg-white hover:bg-stone-50 hover:text-pink-500 border border-stone-200 hover:border-pink-200 rounded-xl shadow-sm transition-all whitespace-nowrap"
           >
             <Download size={16} /> 导出模板
+          </button>
+          <button
+            onClick={() => applyTemplate('standard')}
+            className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 text-xs sm:text-sm font-bold text-stone-500 bg-white hover:bg-stone-50 hover:text-pink-500 border border-stone-200 hover:border-pink-200 rounded-xl shadow-sm transition-all whitespace-nowrap"
+          >
+            <Wand2 size={16} /> 套用标准版
+          </button>
+          <button
+            onClick={() => applyTemplate('light')}
+            className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 text-xs sm:text-sm font-bold text-stone-500 bg-white hover:bg-stone-50 hover:text-pink-500 border border-stone-200 hover:border-pink-200 rounded-xl shadow-sm transition-all whitespace-nowrap"
+          >
+            <Wand2 size={16} /> 套用轻量版
+          </button>
+          <button
+            onClick={() => applyTemplate('outdoor')}
+            className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 text-xs sm:text-sm font-bold text-stone-500 bg-white hover:bg-stone-50 hover:text-pink-500 border border-stone-200 hover:border-pink-200 rounded-xl shadow-sm transition-all whitespace-nowrap"
+          >
+            <Wand2 size={16} /> 套用户外版
           </button>
         </div>
         
