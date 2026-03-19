@@ -72,11 +72,11 @@ export const api = {
     return res.json();
   },
 
-  async createTodo(text: string) {
+  async createTodo(data: { text: string; priority?: 'low' | 'medium' | 'high'; dueDate?: string | null }) {
     const res = await fetch(`${API_URL}/todos`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ text })
+      body: JSON.stringify(data)
     });
     if (!res.ok) {
       const err = await res.json();
@@ -85,11 +85,11 @@ export const api = {
     return res.json();
   },
 
-  async updateTodo(id: number, completed: boolean) {
+  async updateTodo(id: number, data: { completed?: boolean; text?: string; priority?: 'low' | 'medium' | 'high'; dueDate?: string | null }) {
     const res = await fetch(`${API_URL}/todos/${id}`, {
       method: 'PUT',
       headers: headers(),
-      body: JSON.stringify({ completed })
+      body: JSON.stringify(data)
     });
     if (!res.ok) {
       const err = await res.json();
