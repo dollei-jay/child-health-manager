@@ -120,80 +120,103 @@ function App() {
       {/* Header */}
       <header className="bg-white/60 backdrop-blur-xl border-b border-pink-100 sticky top-0 z-10 print:hidden shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between py-4 md:py-5 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200">
-                <Sparkles size={20} />
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between py-3 gap-3 lg:gap-4">
+            {/* Top row on mobile: Title + Actions */}
+            <div className="flex items-center justify-between gap-4 min-w-0">
+              <div className="flex items-center gap-3 shrink-0 min-w-0">
+                <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200">
+                  <Sparkles size={20} />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600 leading-tight truncate">
+                    {userProfile?.childName ? `${userProfile.childName}的健康成长执行清单` : '宝贝健康成长执行清单'}
+                  </h1>
+                  <p className="mt-0.5 text-xs font-medium text-stone-500 flex items-center gap-1.5 truncate">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
+                    <span className="truncate">{getSubtitle()}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600 leading-tight">
-                  {userProfile?.childName ? `${userProfile.childName}的健康成长执行清单` : '宝贝健康成长执行清单'}
-                </h1>
-                <p className="mt-0.5 text-[11px] md:text-xs font-medium text-stone-500 flex items-center gap-1.5 flex-wrap">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
-                  {getSubtitle()}
-                </p>
+              
+              {/* Mobile Actions */}
+              <div className="flex items-center gap-1 shrink-0 lg:hidden">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
+                  title="设置"
+                >
+                  <Settings size={20} />
+                </button>
+                <button
+                  onClick={logout}
+                  className="p-2 text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                  title="退出登录"
+                >
+                  <LogOut size={20} />
+                </button>
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
-              <div className="w-full md:w-auto -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto hide-scrollbar pb-2 md:pb-0">
-                <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max mx-auto md:mx-0">
+            {/* Bottom row on mobile: Navigation */}
+            <div className="flex items-center gap-3 min-w-0 lg:flex-1 lg:justify-end">
+              <div className="w-full overflow-x-auto hide-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 lg:w-auto">
+                <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max lg:w-auto mx-auto lg:mx-0">
                   <TabButton 
                     active={activeTab === 'principles'} 
                     onClick={() => setActiveTab('principles')} 
-                    icon={<BookOpen size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<BookOpen size={16} />} 
                     label="核心原则" 
                   />
                   <TabButton 
                     active={activeTab === 'plan'} 
                     onClick={() => setActiveTab('plan')} 
-                    icon={<CalendarDays size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<CalendarDays size={16} />} 
                     label="一周计划" 
                   />
                   <TabButton 
                     active={activeTab === 'stats'} 
                     onClick={() => setActiveTab('stats')} 
-                    icon={<BarChart2 size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<BarChart2 size={16} />} 
                     label="数据统计" 
                   />
                   <TabButton 
                     active={activeTab === 'growth'} 
                     onClick={() => setActiveTab('growth')} 
-                    icon={<TrendingUp size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<TrendingUp size={16} />} 
                     label="生长记录" 
                   />
                   <TabButton 
                     active={activeTab === 'grocery'} 
                     onClick={() => setActiveTab('grocery')} 
-                    icon={<ShoppingCart size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<ShoppingCart size={16} />} 
                     label="采购清单" 
                   />
                   <TabButton 
                     active={activeTab === 'todos'} 
                     onClick={() => setActiveTab('todos')} 
-                    icon={<ListTodo size={16} className="md:w-[18px] md:h-[18px]" />} 
+                    icon={<ListTodo size={16} />} 
                     label="备忘待办" 
                   />
                 </nav>
               </div>
               
-              <div className="flex items-center gap-2 md:gap-4">
+              {/* Desktop Actions */}
+              <div className="hidden lg:flex items-center gap-2 shrink-0 ml-2 pl-4 border-l border-pink-100">
                 <button
                   onClick={() => setShowSettings(true)}
-                  className="hidden md:flex items-center gap-2 px-4 py-2 text-sm font-bold text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors whitespace-nowrap"
                   title="设置"
                 >
                   <Settings size={18} />
-                  设置
+                  <span>设置</span>
                 </button>
                 <button
                   onClick={logout}
-                  className="hidden md:flex items-center gap-2 px-4 py-2 text-sm font-bold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors whitespace-nowrap"
                   title="退出登录"
                 >
                   <LogOut size={18} />
-                  退出
+                  <span>退出</span>
                 </button>
               </div>
             </div>
@@ -220,7 +243,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 md:gap-2 px-3 py-2 md:px-5 md:py-2.5 rounded-xl text-xs md:text-sm font-bold whitespace-nowrap transition-all duration-300 ${
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-300 ${
         active 
           ? 'bg-white text-pink-600 shadow-sm border border-pink-100 scale-100' 
           : 'text-stone-500 hover:bg-pink-50/50 hover:text-pink-500 scale-95 hover:scale-100 border border-transparent'
