@@ -61,9 +61,15 @@ async function startServer() {
         userId INTEGER,
         text TEXT,
         completed INTEGER DEFAULT 0,
+        priority TEXT DEFAULT 'medium',
+        dueDate TEXT,
         createdAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      // Backward-compatible migration for existing databases
+      db.run(`ALTER TABLE todos ADD COLUMN priority TEXT DEFAULT 'medium'`, () => {});
+      db.run(`ALTER TABLE todos ADD COLUMN dueDate TEXT`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS weekly_plan (
         userId INTEGER UNIQUE,
@@ -202,27 +208,64 @@ async function startServer() {
 
   // Create Todo
   app.post('/api/todos', authenticateToken, (req: any, res) => {
-    const { text } = req.body;
+    const { text, priority = 'medium', dueDate = null } = req.body;
     const createdAt = new Date().toISOString();
-    
+
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ error: 'Todo text is required' });
+    }
+
+    const allowedPriorities = ['low', 'medium', 'high'];
+    const normalizedPriority = allowedPriorities.includes(priority) ? priority : 'medium';
+
     db.run(
-      `INSERT INTO todos (userId, text, completed, createdAt) VALUES (?, ?, 0, ?)`,
-      [req.user.id, text, createdAt],
+      `INSERT INTO todos (userId, text, completed, priority, dueDate, createdAt) VALUES (?, ?, 0, ?, ?, ?)`,
+      [req.user.id, String(text).trim(), normalizedPriority, dueDate, createdAt],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, text, completed: false, createdAt });
+        res.json({ id: this.lastID, text: String(text).trim(), completed: false, priority: normalizedPriority, dueDate, createdAt });
       }
     );
   });
 
   // Update Todo
   app.put('/api/todos/:id', authenticateToken, (req: any, res) => {
-    const { completed } = req.body;
-    const completedInt = completed ? 1 : 0;
-    
+    const { completed, text, priority, dueDate } = req.body;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (typeof completed === 'boolean') {
+      fields.push('completed = ?');
+      values.push(completed ? 1 : 0);
+    }
+
+    if (typeof text === 'string') {
+      fields.push('text = ?');
+      values.push(text.trim());
+    }
+
+    if (typeof priority === 'string') {
+      const allowedPriorities = ['low', 'medium', 'high'];
+      const normalizedPriority = allowedPriorities.includes(priority) ? priority : 'medium';
+      fields.push('priority = ?');
+      values.push(normalizedPriority);
+    }
+
+    if (typeof dueDate === 'string' || dueDate === null) {
+      fields.push('dueDate = ?');
+      values.push(dueDate);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    values.push(req.params.id, req.user.id);
+
     db.run(
-      `UPDATE todos SET completed = ? WHERE id = ? AND userId = ?`,
-      [completedInt, req.params.id, req.user.id],
+      `UPDATE todos SET ${fields.join(', ')} WHERE id = ? AND userId = ?`,
+      values,
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
