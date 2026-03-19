@@ -218,3 +218,7 @@ JWT_SECRET=替换成高强度随机字符串
 ## 11. 许可证
 
 暂未指定（可后续补充 `LICENSE` 文件）。
+
+## 开发流程
+
+- 参见 [DEV_WORKFLOW.md](./DEV_WORKFLOW.md)（本地先测试，再推 GitHub 的标准流程）
