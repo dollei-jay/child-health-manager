@@ -10,6 +10,8 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 interface GrowthRecord {
   id: string;
@@ -17,13 +19,12 @@ interface GrowthRecord {
   height: number;
   weight: number;
   bmi: string;
+  createdAt?: string;
 }
 
 export default function GrowthTracker() {
-  const [records, setRecords] = useState<GrowthRecord[]>(() => {
-    const saved = localStorage.getItem('anli_growth_data');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [records, setRecords] = useState<GrowthRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [date, setDate] = useState(() => {
     const d = new Date();
@@ -32,41 +33,66 @@ export default function GrowthTracker() {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
 
-  useEffect(() => {
-    localStorage.setItem('anli_growth_data', JSON.stringify(records));
-  }, [records]);
+  const userId = auth.currentUser?.uid;
 
-  const handleAddRecord = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!userId) return;
+
+    const recordsRef = collection(db, `users/${userId}/growthRecords`);
+    const q = query(recordsRef, orderBy('date', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedRecords: GrowthRecord[] = [];
+      snapshot.forEach((doc) => {
+        loadedRecords.push({ id: doc.id, ...doc.data() } as GrowthRecord);
+      });
+      setRecords(loadedRecords);
+      setLoading(false);
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/growthRecords`));
+
+    return () => unsubscribe();
+  }, [userId]);
+
+  const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!date || !height || !weight) return;
+    if (!userId || !date || !height || !weight) return;
 
     const h = parseFloat(height);
     const w = parseFloat(weight);
     if (isNaN(h) || isNaN(w)) return;
 
     const bmi = (w / ((h / 100) * (h / 100))).toFixed(1);
+    const recordId = Date.now().toString();
 
-    const newRecord: GrowthRecord = {
-      id: Date.now().toString(),
+    const newRecord = {
       date,
       height: h,
       weight: w,
-      bmi
+      bmi,
+      createdAt: new Date().toISOString()
     };
 
-    setRecords(prev => {
-      // Add and sort by date descending
-      const updated = [...prev, newRecord].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      return updated;
-    });
-
-    setHeight('');
-    setWeight('');
+    try {
+      await setDoc(doc(db, `users/${userId}/growthRecords/${recordId}`), newRecord);
+      setHeight('');
+      setWeight('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${userId}/growthRecords/${recordId}`);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!userId) return;
+    try {
+      await deleteDoc(doc(db, `users/${userId}/growthRecords/${id}`));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${userId}/growthRecords/${id}`);
+    }
   };
+
+  if (loading) {
+    return <div className="animate-pulse text-center py-10 text-stone-400">加载记录中...</div>;
+  }
 
   // Sort ascending for chart
   const chartData = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(r => ({

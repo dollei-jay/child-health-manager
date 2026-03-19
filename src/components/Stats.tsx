@@ -1,17 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { getMonthDates } from '../utils';
 import { Trophy, Star, Target, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Stats() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [checklistData, setChecklistData] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+
+  const userId = auth.currentUser?.uid;
 
   useEffect(() => {
-    const saved = localStorage.getItem('anli_checklist_data');
-    if (saved) {
-      setChecklistData(JSON.parse(saved));
-    }
-  }, []);
+    if (!userId) return;
+
+    const checklistRef = doc(db, `users/${userId}/checklist/current`);
+
+    const unsubscribe = onSnapshot(checklistRef, (docSnap) => {
+      if (docSnap.exists()) {
+        try {
+          setChecklistData(JSON.parse(docSnap.data().checkedItems));
+        } catch (e) {
+          console.error("Error parsing checklist data", e);
+        }
+      }
+      setLoading(false);
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${userId}/checklist/current`));
+
+    return () => unsubscribe();
+  }, [userId]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -50,6 +67,10 @@ export default function Stats() {
     if (count <= 4) return 'bg-pink-300 text-white border border-pink-400 shadow-sm';
     return 'bg-gradient-to-br from-pink-400 to-rose-500 text-white shadow-md shadow-pink-200 font-bold';
   };
+
+  if (loading) {
+    return <div className="animate-pulse text-center py-10 text-stone-400">加载统计数据中...</div>;
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">

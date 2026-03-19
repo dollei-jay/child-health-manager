@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "childName": { "type": "string" },
+        "childBirthDate": { "type": "string", "format": "date" },
+        "childGender": { "type": "string", "enum": ["boy", "girl"] },
+        "childGoal": { "type": "string" }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Todo": {
+      "title": "Todo",
+      "description": "A single todo or memo item",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "completed", "createdAt"]
+    },
+    "GrowthRecord": {
+      "title": "Growth Record",
+      "description": "A single growth measurement record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "height": { "type": "number" },
+        "weight": { "type": "number" },
+        "bmi": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "height", "weight", "bmi", "createdAt"]
+    },
+    "WeeklyPlan": {
+      "title": "Weekly Plan",
+      "description": "Customized weekly plan data",
+      "type": "object",
+      "properties": {
+        "planData": { "type": "string", "description": "JSON stringified plan data" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["planData", "updatedAt"]
+    },
+    "GroceryList": {
+      "title": "Grocery List",
+      "description": "Customized grocery list data",
+      "type": "object",
+      "properties": {
+        "listData": { "type": "string", "description": "JSON stringified list data" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["listData", "updatedAt"]
+    },
+    "Checklist": {
+      "title": "Checklist",
+      "description": "Daily checklist status",
+      "type": "object",
+      "properties": {
+        "checkedItems": { "type": "string", "description": "JSON stringified checklist data" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["checkedItems", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/growthRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/GrowthRecord" },
+      "description": "User's growth records"
+    },
+    "/users/{userId}/weeklyPlan/current": {
+      "schema": { "$ref": "#/entities/WeeklyPlan" },
+      "description": "User's current weekly plan"
+    },
+    "/users/{userId}/groceryList/current": {
+      "schema": { "$ref": "#/entities/GroceryList" },
+      "description": "User's current grocery list"
+    },
+    "/users/{userId}/checklist/current": {
+      "schema": { "$ref": "#/entities/Checklist" },
+      "description": "User's current checklist"
+    },
+    "/users/{userId}/todos/{todoId}": {
+      "schema": { "$ref": "#/entities/Todo" },
+      "description": "User's todo and memo items"
+    }
+  }
+}
