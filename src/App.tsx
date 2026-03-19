@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo } from 'lucide-react';
+import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings } from 'lucide-react';
 import WeeklyPlan from './components/WeeklyPlan';
 import GroceryList from './components/GroceryList';
 import Principles from './components/Principles';
@@ -7,9 +7,10 @@ import Stats from './components/Stats';
 import GrowthTracker from './components/GrowthTracker';
 import Auth from './components/Auth';
 import Todos from './components/Todos';
+import ProfileSettings from './components/ProfileSettings';
 import { auth, logout, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 interface UserProfile {
   childName?: string;
@@ -23,26 +24,35 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeProfile: (() => void) | undefined;
+    
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        try {
-          const docRef = doc(db, 'users', currentUser.uid);
-          const docSnap = await getDoc(docRef);
+        const docRef = doc(db, 'users', currentUser.uid);
+        unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             setUserProfile(docSnap.data() as UserProfile);
           }
-        } catch (error) {
+          setLoading(false);
+        }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-        }
+          setLoading(false);
+        });
       } else {
+        if (unsubscribeProfile) unsubscribeProfile();
         setUserProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   const calculateAge = (birthDateString?: string) => {
@@ -168,14 +178,24 @@ function App() {
                 </nav>
               </div>
               
-              <button
-                onClick={logout}
-                className="hidden md:flex items-center gap-2 px-4 py-2 text-sm font-bold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
-                title="退出登录"
-              >
-                <LogOut size={18} />
-                退出
-              </button>
+              <div className="flex items-center gap-2 md:gap-4">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="hidden md:flex items-center gap-2 px-4 py-2 text-sm font-bold text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
+                  title="设置"
+                >
+                  <Settings size={18} />
+                  设置
+                </button>
+                <button
+                  onClick={logout}
+                  className="hidden md:flex items-center gap-2 px-4 py-2 text-sm font-bold text-stone-500 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                  title="退出登录"
+                >
+                  <LogOut size={18} />
+                  退出
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -185,6 +205,13 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {renderContent()}
       </main>
+
+      <ProfileSettings 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+        userProfile={userProfile} 
+        userId={user.uid} 
+      />
     </div>
   );
 }
