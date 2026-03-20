@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileText, Download, CalendarRange, Sparkles, Table } from 'lucide-react';
+import { FileText, Download, CalendarRange, Sparkles, Table, Printer } from 'lucide-react';
 import { api } from '../api';
 
 interface WeeklyReport {
@@ -107,6 +107,71 @@ export default function ReportCenter() {
     }
   };
 
+  const exportPdf = () => {
+    if (!report) return;
+
+    const title = `儿童健康成长报告（${report.period.start} ~ ${report.period.end}）`;
+    const html = `
+      <!doctype html>
+      <html lang="zh-CN">
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; padding: 24px; color: #1f2937; }
+          h1 { font-size: 20px; margin: 0 0 8px; }
+          h2 { font-size: 16px; margin: 18px 0 8px; }
+          p, li { font-size: 12px; line-height: 1.7; margin: 0; }
+          ul { margin: 0; padding-left: 18px; }
+          .meta { color: #6b7280; margin-bottom: 12px; font-size: 12px; }
+          .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <p class="meta">生成时间：${new Date(report.generatedAt).toLocaleString('zh-CN')}</p>
+
+        <h2>一、执行概览</h2>
+        <div class="grid">
+          <div class="card"><p>待办进行中：${report.overview.activeTodos} 项</p></div>
+          <div class="card"><p>待办已完成：${report.overview.completedTodos} 项</p></div>
+          <div class="card"><p>待办逾期：${report.overview.overdueTodos} 项</p></div>
+          <div class="card"><p>周计划任务量：${report.overview.weeklyPlanTasks} 项</p></div>
+          <div class="card"><p>采购物资：${report.overview.groceryItems} 项</p></div>
+          <div class="card"><p>打卡次数：${report.overview.checkins} 次（完美日 ${report.overview.perfectDays} 天）</p></div>
+        </div>
+
+        <h2>二、生长数据</h2>
+        <div class="card">
+          <p>${report.growth.latest ? `最新记录：${report.growth.latest.date}，身高 ${report.growth.latest.height} cm，体重 ${report.growth.latest.weight} kg，BMI ${report.growth.latest.bmi}` : '暂无生长记录'}</p>
+          <p style="margin-top:6px;">${report.growth.trend7d.weightDeltaKg !== null ? `周期趋势：体重 ${report.growth.trend7d.weightDeltaKg > 0 ? '+' : ''}${report.growth.trend7d.weightDeltaKg} kg，身高 ${report.growth.trend7d.heightDeltaCm && report.growth.trend7d.heightDeltaCm > 0 ? '+' : ''}${report.growth.trend7d.heightDeltaCm ?? 0} cm，BMI ${report.growth.trend7d.bmiDelta && report.growth.trend7d.bmiDelta > 0 ? '+' : ''}${report.growth.trend7d.bmiDelta ?? 0}` : '周期趋势：样本不足（至少2条记录）'}</p>
+        </div>
+
+        <h2>三、执行建议</h2>
+        <ul>
+          ${report.recommendations.map((r) => `<li>${r}</li>`).join('')}
+        </ul>
+      </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank', 'width=900,height=1200');
+    if (!win) {
+      setError('无法打开打印窗口，请检查浏览器弹窗设置');
+      return;
+    }
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      win.print();
+    }, 300);
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="bg-white rounded-3xl p-6 border border-pink-100 shadow-sm">
@@ -165,6 +230,14 @@ export default function ReportCenter() {
             className="h-[42px] px-4 bg-white border border-stone-200 text-stone-600 rounded-xl font-bold text-sm hover:bg-stone-50 transition-colors"
           >
             <span className="inline-flex items-center gap-1.5"><Table size={16} /> 导出待办CSV</span>
+          </button>
+
+          <button
+            onClick={exportPdf}
+            disabled={!report}
+            className="h-[42px] px-4 bg-white border border-purple-200 text-purple-600 rounded-xl font-bold text-sm hover:bg-purple-50 transition-colors disabled:opacity-50"
+          >
+            <span className="inline-flex items-center gap-1.5"><Printer size={16} /> 导出PDF（打印）</span>
           </button>
         </div>
 

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- 报告中心新增 PDF 导出（浏览器打印版）
+- 支持将报告内容排版后直接打印/另存为 PDF
 - 新增 CSV 导出接口：`GET /api/export/csv?type=growth|todos`
 - 报告中心新增一键导出：生长记录 CSV / 待办 CSV
 - 新增 cron 主动提醒：每日 09:00（早间提醒）与 21:00（晚间复盘提醒），时区 `Asia/Shanghai`
