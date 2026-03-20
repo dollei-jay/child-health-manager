@@ -200,6 +200,51 @@ async function startServer() {
     }, 0);
   };
 
+  // Basic login rate limit (in-memory)
+  const LOGIN_WINDOW_MS = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000); // 15 min
+  const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_RATE_LIMIT_MAX || 10);
+  const loginAttempts = new Map<string, number[]>();
+
+  const getClientIp = (req: any) => {
+    const raw = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || 'unknown';
+    return String(raw).split(',')[0].trim();
+  };
+
+  const makeLoginKey = (req: any, email: string) => `${getClientIp(req)}|${email}`;
+
+  const checkLoginRateLimit = (key: string) => {
+    const now = Date.now();
+    const arr = (loginAttempts.get(key) || []).filter((ts) => now - ts <= LOGIN_WINDOW_MS);
+    loginAttempts.set(key, arr);
+
+    if (arr.length >= LOGIN_MAX_ATTEMPTS) {
+      const retryAfterMs = LOGIN_WINDOW_MS - (now - arr[0]);
+      return { blocked: true, retryAfterSec: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
+    }
+
+    return { blocked: false, retryAfterSec: 0 };
+  };
+
+  const recordLoginFailure = (key: string) => {
+    const now = Date.now();
+    const arr = (loginAttempts.get(key) || []).filter((ts) => now - ts <= LOGIN_WINDOW_MS);
+    arr.push(now);
+    loginAttempts.set(key, arr);
+  };
+
+  const clearLoginFailures = (key: string) => {
+    loginAttempts.delete(key);
+  };
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, arr] of loginAttempts.entries()) {
+      const filtered = arr.filter((ts) => now - ts <= LOGIN_WINDOW_MS);
+      if (filtered.length === 0) loginAttempts.delete(key);
+      else loginAttempts.set(key, filtered);
+    }
+  }, 5 * 60 * 1000).unref();
+
   const isValidDateString = (value: any) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
   const normalizeText = (value: any, max = 300) => {
@@ -280,12 +325,27 @@ async function startServer() {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    const loginKey = makeLoginKey(req, normalizedEmail);
+    const limitCheck = checkLoginRateLimit(loginKey);
+    if (limitCheck.blocked) {
+      res.setHeader('Retry-After', String(limitCheck.retryAfterSec));
+      return res.status(429).json({ error: `Too many login attempts. Retry in ${limitCheck.retryAfterSec}s.` });
+    }
+
     db.get(`SELECT * FROM users WHERE email = ?`, [normalizedEmail], async (err, user: any) => {
       if (err) return res.status(500).json({ error: err.message });
-      if (!user) return res.status(400).json({ error: 'Invalid email or password' });
+      if (!user) {
+        recordLoginFailure(loginKey);
+        return res.status(400).json({ error: 'Invalid email or password' });
+      }
 
       const validPassword = await bcrypt.compare(normalizedPassword, user.password);
-      if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
+      if (!validPassword) {
+        recordLoginFailure(loginKey);
+        return res.status(400).json({ error: 'Invalid email or password' });
+      }
+
+      clearLoginFailures(loginKey);
 
       const tokenPayload = { id: user.id, email: user.email };
       const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
