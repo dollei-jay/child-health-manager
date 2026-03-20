@@ -20,20 +20,39 @@ try {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-local-nas';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const PORT = Number(process.env.PORT || 3000);
+const IS_PRODUCTION = NODE_ENV === 'production';
 
 async function startServer() {
   fs.writeFileSync('trace.log', 'Starting server...\n');
   const app = express();
-  const PORT = 3000;
+
+  if (IS_PRODUCTION) {
+    if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).trim().length < 32) {
+      throw new Error('Production requires JWT_SECRET with at least 32 characters.');
+    }
+
+    const weakSecrets = [
+      'your-super-secret-jwt-key-for-local-nas',
+      'changeme',
+      '123456',
+      'password'
+    ];
+
+    if (weakSecrets.includes(String(process.env.JWT_SECRET).trim().toLowerCase())) {
+      throw new Error('Production JWT_SECRET is too weak. Please use a high-entropy secret.');
+    }
+  }
 
   app.use(cors());
   app.use(express.json());
   fs.appendFileSync('trace.log', 'Middleware added.\n');
 
   // Initialize SQLite Database
-  const dbPath = process.env.NODE_ENV === 'production' ? './data/database.sqlite' : './database.sqlite';
-  
-  if (process.env.NODE_ENV === 'production') {
+  const dbPath = IS_PRODUCTION ? './data/database.sqlite' : './database.sqlite';
+
+  if (IS_PRODUCTION) {
     if (!fs.existsSync('./data')) {
       fs.mkdirSync('./data');
     }
@@ -181,23 +200,58 @@ async function startServer() {
     }, 0);
   };
 
+  const isValidDateString = (value: any) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  const normalizeText = (value: any, max = 300) => {
+    const text = String(value ?? '').trim();
+    return text.slice(0, max);
+  };
+
+  const normalizeOptionalDate = (value: any) => {
+    if (value === null || value === undefined || value === '') return null;
+    const dateStr = String(value);
+    return isValidDateString(dateStr) ? dateStr : null;
+  };
+
   // --- API ROUTES ---
 
   // Register
   app.post('/api/auth/register', async (req, res) => {
-    const { email, password, childName, childBirthDate, childGender, childGoal } = req.body;
-    
-    if (!email || !password) {
+    const { email, password, childName, childBirthDate, childGender, childGoal } = req.body || {};
+
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const normalizedPassword = String(password ?? '');
+
+    if (!normalizedEmail || !normalizedPassword) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    if (normalizedPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedGender = childGender === 'boy' ? 'boy' : 'girl';
+    const normalizedBirthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
+
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
       const createdAt = new Date().toISOString();
 
       db.run(
         `INSERT INTO users (email, password, childName, childBirthDate, childGender, childGoal, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [email, hashedPassword, childName, childBirthDate, childGender, childGoal, createdAt],
+        [
+          normalizedEmail,
+          hashedPassword,
+          normalizeText(childName, 50),
+          normalizedBirthDate,
+          normalizedGender,
+          normalizeText(childGoal, 120),
+          createdAt
+        ],
         function (err) {
           if (err) {
             if (err.message.includes('UNIQUE constraint failed')) {
@@ -206,8 +260,8 @@ async function startServer() {
             return res.status(500).json({ error: err.message });
           }
           
-          const user = { id: this.lastID, email };
-          const token = jwt.sign(user, JWT_SECRET);
+          const user = { id: this.lastID, email: normalizedEmail };
+          const token = jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
           res.json({ token, user });
         }
       );
@@ -218,17 +272,23 @@ async function startServer() {
 
   // Login
   app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const normalizedPassword = String(password ?? '');
 
-    db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user: any) => {
+    if (!normalizedEmail || !normalizedPassword) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    db.get(`SELECT * FROM users WHERE email = ?`, [normalizedEmail], async (err, user: any) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!user) return res.status(400).json({ error: 'Invalid email or password' });
 
-      const validPassword = await bcrypt.compare(password, user.password);
+      const validPassword = await bcrypt.compare(normalizedPassword, user.password);
       if (!validPassword) return res.status(400).json({ error: 'Invalid email or password' });
 
       const tokenPayload = { id: user.id, email: user.email };
-      const token = jwt.sign(tokenPayload, JWT_SECRET);
+      const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
       res.json({ token, user: tokenPayload });
     });
   });
@@ -244,10 +304,20 @@ async function startServer() {
 
   // Update Profile
   app.put('/api/profile', authenticateToken, (req: any, res) => {
-    const { childName, childBirthDate, childGender, childGoal } = req.body;
+    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+
+    const normalizedGender = childGender === 'boy' ? 'boy' : 'girl';
+    const normalizedBirthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
+
     db.run(
       `UPDATE users SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ? WHERE id = ?`,
-      [childName, childBirthDate, childGender, childGoal, req.user.id],
+      [
+        normalizeText(childName, 50),
+        normalizedBirthDate,
+        normalizedGender,
+        normalizeText(childGoal, 120),
+        req.user.id
+      ],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
@@ -270,22 +340,24 @@ async function startServer() {
 
   // Create Todo
   app.post('/api/todos', authenticateToken, (req: any, res) => {
-    const { text, priority = 'medium', dueDate = null } = req.body;
+    const { text, priority = 'medium', dueDate = null } = req.body || {};
     const createdAt = new Date().toISOString();
 
-    if (!text || !String(text).trim()) {
+    const normalizedText = normalizeText(text, 200);
+    if (!normalizedText) {
       return res.status(400).json({ error: 'Todo text is required' });
     }
 
     const allowedPriorities = ['low', 'medium', 'high'];
     const normalizedPriority = allowedPriorities.includes(priority) ? priority : 'medium';
+    const normalizedDueDate = normalizeOptionalDate(dueDate);
 
     db.run(
       `INSERT INTO todos (userId, text, completed, priority, dueDate, createdAt) VALUES (?, ?, 0, ?, ?, ?)`,
-      [req.user.id, String(text).trim(), normalizedPriority, dueDate, createdAt],
+      [req.user.id, normalizedText, normalizedPriority, normalizedDueDate, createdAt],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, text: String(text).trim(), completed: false, priority: normalizedPriority, dueDate, createdAt });
+        res.json({ id: this.lastID, text: normalizedText, completed: false, priority: normalizedPriority, dueDate: normalizedDueDate, createdAt });
       }
     );
   });
@@ -303,8 +375,12 @@ async function startServer() {
     }
 
     if (typeof text === 'string') {
+      const normalizedText = normalizeText(text, 200);
+      if (!normalizedText) {
+        return res.status(400).json({ error: 'Todo text cannot be empty' });
+      }
       fields.push('text = ?');
-      values.push(text.trim());
+      values.push(normalizedText);
     }
 
     if (typeof priority === 'string') {
@@ -316,7 +392,7 @@ async function startServer() {
 
     if (typeof dueDate === 'string' || dueDate === null) {
       fields.push('dueDate = ?');
-      values.push(dueDate);
+      values.push(normalizeOptionalDate(dueDate));
     }
 
     if (fields.length === 0) {
@@ -358,8 +434,13 @@ async function startServer() {
   });
 
   app.post('/api/weekly-plan', authenticateToken, (req: any, res) => {
-    const { planData } = req.body;
+    const { planData } = req.body || {};
     const updatedAt = new Date().toISOString();
+
+    if (typeof planData !== 'string' || planData.length > 40000) {
+      return res.status(400).json({ error: 'Invalid weekly plan payload' });
+    }
+
     db.run(
       `INSERT INTO weekly_plan (userId, planData, updatedAt) VALUES (?, ?, ?)
        ON CONFLICT(userId) DO UPDATE SET planData = excluded.planData, updatedAt = excluded.updatedAt`,
@@ -380,8 +461,13 @@ async function startServer() {
   });
 
   app.post('/api/checklist', authenticateToken, (req: any, res) => {
-    const { checkedItems } = req.body;
+    const { checkedItems } = req.body || {};
     const updatedAt = new Date().toISOString();
+
+    if (typeof checkedItems !== 'string' || checkedItems.length > 50000) {
+      return res.status(400).json({ error: 'Invalid checklist payload' });
+    }
+
     db.run(
       `INSERT INTO checklist (userId, checkedItems, updatedAt) VALUES (?, ?, ?)
        ON CONFLICT(userId) DO UPDATE SET checkedItems = excluded.checkedItems, updatedAt = excluded.updatedAt`,
@@ -402,8 +488,13 @@ async function startServer() {
   });
 
   app.post('/api/grocery-list', authenticateToken, (req: any, res) => {
-    const { listData } = req.body;
+    const { listData } = req.body || {};
     const updatedAt = new Date().toISOString();
+
+    if (typeof listData !== 'string' || listData.length > 30000) {
+      return res.status(400).json({ error: 'Invalid grocery list payload' });
+    }
+
     db.run(
       `INSERT INTO grocery_list (userId, listData, updatedAt) VALUES (?, ?, ?)
        ON CONFLICT(userId) DO UPDATE SET listData = excluded.listData, updatedAt = excluded.updatedAt`,
@@ -424,14 +515,35 @@ async function startServer() {
   });
 
   app.post('/api/growth-records', authenticateToken, (req: any, res) => {
-    const { date, height, weight, bmi } = req.body;
+    const { date, height, weight, bmi } = req.body || {};
     const createdAt = new Date().toISOString();
+
+    if (!isValidDateString(date)) {
+      return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    }
+
+    const h = Number(height);
+    const w = Number(weight);
+    const b = Number(bmi);
+
+    if (Number.isNaN(h) || h < 40 || h > 250) {
+      return res.status(400).json({ error: 'height out of valid range' });
+    }
+
+    if (Number.isNaN(w) || w < 2 || w > 300) {
+      return res.status(400).json({ error: 'weight out of valid range' });
+    }
+
+    if (Number.isNaN(b) || b < 5 || b > 60) {
+      return res.status(400).json({ error: 'bmi out of valid range' });
+    }
+
     db.run(
       `INSERT INTO growth_records (userId, date, height, weight, bmi, createdAt) VALUES (?, ?, ?, ?, ?, ?)`,
-      [req.user.id, date, height, weight, bmi, createdAt],
+      [req.user.id, date, Number(h.toFixed(1)), Number(w.toFixed(1)), Number(b.toFixed(1)).toFixed(1), createdAt],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, date, height, weight, bmi, createdAt });
+        res.json({ id: this.lastID, date, height: Number(h.toFixed(1)), weight: Number(w.toFixed(1)), bmi: Number(b.toFixed(1)).toFixed(1), createdAt });
       }
     );
   });
@@ -660,7 +772,7 @@ async function startServer() {
     });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!IS_PRODUCTION) {
     console.log('Creating Vite server...');
     const vite = await createViteServer({
       server: { middlewareMode: true },
