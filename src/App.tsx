@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw, Bell } from 'lucide-react';
+import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw, Bell, Siren } from 'lucide-react';
 import Auth from './components/Auth';
 import ProfileSettings from './components/ProfileSettings';
 
@@ -12,6 +12,7 @@ const Todos = lazy(() => import('./components/Todos'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ReportCenter = lazy(() => import('./components/ReportCenter'));
 const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
+const ReminderCenter = lazy(() => import('./components/ReminderCenter'));
 import { api, getToken, removeToken } from './api';
 
 interface UserProfile {
@@ -155,6 +156,7 @@ function App() {
       case 'todos': return <Todos />;
       case 'reports': return <ReportCenter />;
       case 'review': return <WeeklyReview />;
+      case 'reminders': return <ReminderCenter onGotoTab={setActiveTab} />;
       default: return <Principles />;
     }
   };
@@ -262,6 +264,12 @@ function App() {
                     onClick={() => setActiveTab('review')} 
                     icon={<RefreshCcw size={16} />} 
                     label="周复盘" 
+                  />
+                  <TabButton 
+                    active={activeTab === 'reminders'} 
+                    onClick={() => setActiveTab('reminders')} 
+                    icon={<Siren size={16} />} 
+                    label="提醒中心" 
                   />
                 </nav>
               </div>
