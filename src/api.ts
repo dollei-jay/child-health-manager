@@ -163,6 +163,53 @@ export const api = {
     return res.json();
   },
 
+  async getChildren() {
+    const res = await fetch(`${API_URL}/children`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch children');
+    }
+    return res.json();
+  },
+
+  async createChild(data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string }) {
+    const res = await fetch(`${API_URL}/children`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to create child');
+    }
+    return res.json();
+  },
+
+  async updateChild(id: number, data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string }) {
+    const res = await fetch(`${API_URL}/children/${id}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to update child');
+    }
+    return res.json();
+  },
+
+  async selectChild(id: number) {
+    const res = await fetch(`${API_URL}/children/${id}/select`, {
+      method: 'POST',
+      headers: headers()
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to select child');
+    }
+    return res.json();
+  },
+
   async saveWeeklyReview(data: { weekStart: string; summary: string; blockers: string; nextFocus: string; score: number }) {
     const res = await fetch(`${API_URL}/weekly-review`, {
       method: 'POST',

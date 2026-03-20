@@ -66,3 +66,7 @@
    - 新增 child_profiles 与 selectedChildId，完成旧数据兼容迁移
    - 待办/计划/清单/生长记录按选中孩子隔离存取
    - 新增 children 管理与选择接口，保留 profile 兼容行为
+
+15. 阶段P2（多孩子档案）前端首版已落地
+   - 设置面板新增 ChildManager：新增/编辑/切换孩子
+   - 与后端 children 接口打通，切换后自动刷新当前档案

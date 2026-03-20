@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- 新增多孩子前端管理组件（新增/编辑/切换孩子）
+- 设置面板升级为“当前孩子 + 多孩子档案管理”
+- API 客户端增加 children 管理调用（get/create/update/select）
 - 新增多孩子数据模型基础：`child_profiles` 表与 `users.selectedChildId`
 - 新增多孩子接口：`GET/POST/PUT /api/children`、`POST /api/children/:id/select`
 - 现有模块数据按“当前选中孩子”隔离（待办/计划/清单/生长记录）

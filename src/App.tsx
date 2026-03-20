@@ -50,10 +50,14 @@ function App() {
     checkAuth();
   }, []);
 
+  const fetchAndSetProfile = async () => {
+    const profile = await api.getProfile();
+    setUserProfile(profile);
+  };
+
   const handleLogin = async () => {
     try {
-      const profile = await api.getProfile();
-      setUserProfile(profile);
+      await fetchAndSetProfile();
       setIsAuthenticated(true);
     } catch (err) {
       console.error(err);
@@ -268,6 +272,7 @@ function App() {
         onClose={() => setShowSettings(false)} 
         userProfile={userProfile} 
         onProfileUpdate={setUserProfile}
+        onRefreshProfile={fetchAndSetProfile}
       />
     </div>
   );
