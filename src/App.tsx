@@ -19,6 +19,12 @@ interface UserProfile {
   childBirthDate?: string;
   childGender?: string;
   childGoal?: string;
+  selectedChildId?: number | null;
+}
+
+interface ChildMeta {
+  total: number;
+  selectedName: string;
 }
 
 function App() {
@@ -27,6 +33,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [childMeta, setChildMeta] = useState<ChildMeta>({ total: 0, selectedName: '' });
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -53,6 +60,16 @@ function App() {
   const fetchAndSetProfile = async () => {
     const profile = await api.getProfile();
     setUserProfile(profile);
+
+    try {
+      const childrenRes = await api.getChildren();
+      const items = Array.isArray(childrenRes?.items) ? childrenRes.items : [];
+      const selectedId = Number(profile?.selectedChildId);
+      const selected = items.find((c: any) => Number(c.id) === selectedId);
+      setChildMeta({ total: items.length, selectedName: selected?.childName || profile?.childName || '' });
+    } catch {
+      setChildMeta({ total: profile?.childName ? 1 : 0, selectedName: profile?.childName || '' });
+    }
   };
 
   const handleLogin = async () => {
@@ -95,15 +112,16 @@ function App() {
 
   const getSubtitle = () => {
     if (!userProfile) return '8岁7个月女孩 ｜ 控体重增速、稳发育节奏';
-    
+
     const age = calculateAge(userProfile.childBirthDate);
     const gender = userProfile.childGender === 'boy' ? '男孩' : '女孩';
     const goal = userProfile.childGoal || '健康成长';
-    
+    const scope = childMeta.total > 1 ? `当前孩子：${childMeta.selectedName || userProfile.childName || '未选择'}（共${childMeta.total}个）` : `当前孩子：${userProfile.childName || '未设置'}`;
+
     if (age) {
-      return `${age}${gender} ｜ ${goal}`;
+      return `${age}${gender} ｜ ${goal} ｜ ${scope}`;
     }
-    return `宝贝健康成长 ｜ ${goal}`;
+    return `宝贝健康成长 ｜ ${goal} ｜ ${scope}`;
   };
 
   if (loading) {
@@ -153,6 +171,10 @@ function App() {
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
                     <span className="truncate">{getSubtitle()}</span>
                   </p>
+                  <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-pink-50 border border-pink-100 text-[11px] font-bold text-pink-600 max-w-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
+                    <span className="truncate">数据视图：{childMeta.selectedName || userProfile?.childName || '未选择孩子'}</span>
+                  </div>
                 </div>
               </div>
               
