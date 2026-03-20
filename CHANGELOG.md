@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- 新增 GitHub Actions：push 到 main 自动发布 Docker 镜像到 GHCR
 - 新增「成长报告中心」页面（ReportCenter）
 - 新增周报接口：`GET /api/reports/weekly?days=7|14|30`
 - 新增报告导出功能（Markdown）

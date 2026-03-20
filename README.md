@@ -102,6 +102,19 @@ JWT_SECRET=请替换为至少32位随机复杂字符串
 
 ## 6. Docker 部署
 
+### 6.2 自动发布 Docker 镜像（main 分支）
+
+已启用 GitHub Actions 自动发布：
+
+- 触发条件：推送到 `main`
+- 镜像仓库：`ghcr.io/dollei-jay/child-health-manager`
+- 标签策略：
+  - `latest`（main 最新）
+  - `sha-<commit>`（可精确回滚）
+
+工作流文件：`.github/workflows/docker-publish.yml`
+
+
 ### 6.1 直接 compose 启动（通用 Linux）
 
 ```bash

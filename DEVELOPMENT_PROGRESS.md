@@ -28,3 +28,7 @@
 - 推送该分支到 GitHub
 - 发起 PR 合并到 main
 - 按路线继续阶段2（生长/BMI趋势增强）与阶段3（计划闭环）
+
+6. 新增 CI/CD 自动发版（Docker）
+   - 新增 `.github/workflows/docker-publish.yml`
+   - push 到 `main` 自动构建并发布到 GHCR
