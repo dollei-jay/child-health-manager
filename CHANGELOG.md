@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- 生长记录模块增强：新增“较上次变化/近30天频次/数据完整性”洞察卡
+- 生长曲线模块补充趋势提示文案（家庭趋势观察提示）
 - 新增「周复盘」模块（计划闭环）
 - 新增周复盘接口：`GET /api/weekly-review`、`POST /api/weekly-review`
 - 新增 GitHub Actions：push 到 main 自动发布 Docker 镜像到 GHCR
