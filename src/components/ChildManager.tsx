@@ -8,6 +8,7 @@ interface ChildProfile {
   childBirthDate?: string | null;
   childGender?: 'boy' | 'girl';
   childGoal?: string;
+  childAvatar?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -29,12 +30,14 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
   const [formBirthDate, setFormBirthDate] = useState('');
   const [formGender, setFormGender] = useState<'boy' | 'girl'>('girl');
   const [formGoal, setFormGoal] = useState('');
+  const [formAvatar, setFormAvatar] = useState('');
 
   const resetForm = () => {
     setFormName('');
     setFormBirthDate('');
     setFormGender('girl');
     setFormGoal('');
+    setFormAvatar('');
   };
 
   const fetchChildren = async () => {
@@ -49,6 +52,15 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
     }
   };
 
+  const handleAvatarSelect = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFormAvatar(String(reader.result || '').slice(0, 250000));
+    };
+    reader.readAsDataURL(file);
+  };
+
   useEffect(() => {
     fetchChildren();
   }, []);
@@ -60,7 +72,8 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
         childName: formName.trim(),
         childBirthDate: formBirthDate || null,
         childGender: formGender,
-        childGoal: formGoal
+        childGoal: formGoal,
+        childAvatar: formAvatar
       });
       setShowCreate(false);
       resetForm();
@@ -80,6 +93,7 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
     setFormBirthDate(child.childBirthDate || '');
     setFormGender((child.childGender as 'boy' | 'girl') || 'girl');
     setFormGoal(child.childGoal || '');
+    setFormAvatar(child.childAvatar || '');
   };
 
   const submitEdit = async () => {
@@ -89,7 +103,8 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
         childName: formName.trim(),
         childBirthDate: formBirthDate || null,
         childGender: formGender,
-        childGoal: formGoal
+        childGoal: formGoal,
+        childAvatar: formAvatar
       });
       setEditingId(null);
       resetForm();
@@ -160,6 +175,8 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
           setFormGender={setFormGender}
           formGoal={formGoal}
           setFormGoal={setFormGoal}
+          formAvatar={formAvatar}
+          onAvatarSelect={handleAvatarSelect}
           onSave={submitCreate}
           onCancel={() => {
             setShowCreate(false);
@@ -186,6 +203,8 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
                   setFormGender={setFormGender}
                   formGoal={formGoal}
                   setFormGoal={setFormGoal}
+                  formAvatar={formAvatar}
+                  onAvatarSelect={handleAvatarSelect}
                   onSave={submitEdit}
                   onCancel={cancelEdit}
                 />
@@ -196,12 +215,21 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
           return (
             <div key={child.id} className={`p-4 rounded-2xl border ${selected ? 'border-pink-200 bg-pink-50/50' : 'border-stone-200 bg-white'}`}>
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-extrabold text-stone-700">{child.childName}</p>
-                  <p className="text-xs text-stone-500 mt-1">
-                    {child.childBirthDate ? `生日 ${child.childBirthDate}` : '未设置生日'} · {child.childGender === 'boy' ? '男孩' : '女孩'}
-                  </p>
-                  <p className="text-xs text-stone-400 mt-1">{child.childGoal || '未设置成长目标'}</p>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden shrink-0">
+                    {child.childAvatar ? (
+                      <img src={child.childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
+                    ) : (
+                      (child.childName || '宝').charAt(0)
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-extrabold text-stone-700 truncate">{child.childName}</p>
+                    <p className="text-xs text-stone-500 mt-1">
+                      {child.childBirthDate ? `生日 ${child.childBirthDate}` : '未设置生日'} · {child.childGender === 'boy' ? '男孩' : '女孩'}
+                    </p>
+                    <p className="text-xs text-stone-400 mt-1 truncate">{child.childGoal || '未设置成长目标'}</p>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -289,6 +317,8 @@ function EditorCard({
   setFormGender,
   formGoal,
   setFormGoal,
+  formAvatar,
+  onAvatarSelect,
   onSave,
   onCancel
 }: {
@@ -301,6 +331,8 @@ function EditorCard({
   setFormGender: (v: 'boy' | 'girl') => void;
   formGoal: string;
   setFormGoal: (v: string) => void;
+  formAvatar: string;
+  onAvatarSelect: (file?: File) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -335,6 +367,14 @@ function EditorCard({
           className="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400"
         />
       </div>
+
+      <label className="flex items-center gap-3 px-3 py-2 border border-stone-200 rounded-xl bg-stone-50 cursor-pointer hover:bg-pink-50 transition-colors">
+        <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden">
+          {formAvatar ? <img src={formAvatar} alt="头像预览" className="w-full h-full object-cover" /> : '头像'}
+        </div>
+        <div className="text-xs text-stone-600 font-medium">上传孩子头像（可选）</div>
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => onAvatarSelect(e.target.files?.[0])} />
+      </label>
 
       <div className="flex items-center gap-2">
         <button onClick={onSave} className="px-3 py-2 text-xs font-bold rounded-lg bg-pink-500 text-white hover:bg-pink-600 inline-flex items-center gap-1.5"><Save size={14} /> 保存</button>

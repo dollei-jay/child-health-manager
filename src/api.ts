@@ -172,7 +172,7 @@ export const api = {
     return res.json();
   },
 
-  async createChild(data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string }) {
+  async createChild(data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string; childAvatar?: string }) {
     const res = await fetch(`${API_URL}/children`, {
       method: 'POST',
       headers: headers(),
@@ -185,7 +185,7 @@ export const api = {
     return res.json();
   },
 
-  async updateChild(id: number, data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string }) {
+  async updateChild(id: number, data: { childName: string; childBirthDate?: string | null; childGender?: 'boy' | 'girl'; childGoal?: string; childAvatar?: string }) {
     const res = await fetch(`${API_URL}/children/${id}`, {
       method: 'PUT',
       headers: headers(),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw, Bell, Siren } from 'lucide-react';
+import { CalendarDays, ShoppingCart, TrendingUp, LogOut, ListTodo, Settings, Home, Bell, Repeat } from 'lucide-react';
 import Auth from './components/Auth';
 import ProfileSettings from './components/ProfileSettings';
 
@@ -10,7 +10,6 @@ const Stats = lazy(() => import('./components/Stats'));
 const GrowthTracker = lazy(() => import('./components/GrowthTracker'));
 const Todos = lazy(() => import('./components/Todos'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
-const ReportCenter = lazy(() => import('./components/ReportCenter'));
 const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
 const ReminderCenter = lazy(() => import('./components/ReminderCenter'));
 import { api, getToken, removeToken } from './api';
@@ -20,6 +19,7 @@ interface UserProfile {
   childBirthDate?: string;
   childGender?: string;
   childGoal?: string;
+  childAvatar?: string;
   selectedChildId?: number | null;
 }
 
@@ -35,7 +35,9 @@ function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [childMeta, setChildMeta] = useState<ChildMeta>({ total: 0, selectedName: '' });
+  const [children, setChildren] = useState<Array<{ id: number; childName: string; childAvatar?: string }>>([]);
   const [reminderCount, setReminderCount] = useState(0);
+  const [contextVersion, setContextVersion] = useState(0);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -66,10 +68,12 @@ function App() {
     try {
       const childrenRes = await api.getChildren();
       const items = Array.isArray(childrenRes?.items) ? childrenRes.items : [];
+      setChildren(items.map((c: any) => ({ id: Number(c.id), childName: String(c.childName || ''), childAvatar: c.childAvatar || '' })));
       const selectedId = Number(profile?.selectedChildId);
       const selected = items.find((c: any) => Number(c.id) === selectedId);
       setChildMeta({ total: items.length, selectedName: selected?.childName || profile?.childName || '' });
     } catch {
+      setChildren([]);
       setChildMeta({ total: profile?.childName ? 1 : 0, selectedName: profile?.childName || '' });
     }
 
@@ -94,6 +98,23 @@ function App() {
     removeToken();
     setIsAuthenticated(false);
     setUserProfile(null);
+  };
+
+  const handleQuickSwitchChild = async () => {
+    if (children.length <= 1) return;
+    const selectedId = Number(userProfile?.selectedChildId);
+    const currentIndex = children.findIndex((c) => c.id === selectedId);
+    const next = children[(currentIndex + 1 + children.length) % children.length];
+    if (!next) return;
+
+    try {
+      await api.selectChild(next.id);
+      await fetchAndSetProfile();
+      setActiveTab('dashboard');
+      setContextVersion((v) => v + 1);
+    } catch (err) {
+      console.error('Failed to quick switch child', err);
+    }
   };
 
   const calculateAge = (birthDateString?: string) => {
@@ -125,13 +146,16 @@ function App() {
     const age = calculateAge(userProfile.childBirthDate);
     const gender = userProfile.childGender === 'boy' ? '男孩' : '女孩';
     const goal = userProfile.childGoal || '健康成长';
-    const scope = childMeta.total > 1 ? `当前孩子：${childMeta.selectedName || userProfile.childName || '未选择'}（共${childMeta.total}个）` : `当前孩子：${userProfile.childName || '未设置'}`;
 
     if (age) {
-      return `${age}${gender} ｜ ${goal} ｜ ${scope}`;
+      return `${age}${gender} ｜ ${goal}`;
     }
-    return `宝贝健康成长 ｜ ${goal} ｜ ${scope}`;
+    return `宝贝健康成长 ｜ ${goal}`;
   };
+
+  const selectedChild = children.find((c) => Number(c.id) === Number(userProfile?.selectedChildId));
+  const childAvatar = selectedChild?.childAvatar || userProfile?.childAvatar || '';
+  const childInitial = (userProfile?.childName || childMeta.selectedName || '宝').trim().charAt(0) || '宝';
 
   if (loading) {
     return (
@@ -147,17 +171,21 @@ function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard': return <Dashboard childName={userProfile?.childName} />;
-      case 'principles': return <Principles />;
-      case 'plan': return <WeeklyPlan />;
-      case 'stats': return <Stats />;
+      case 'dashboard':
+        return (
+          <div className="max-w-5xl mx-auto space-y-8">
+            <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} />
+            <Principles />
+            <Stats showCalendar={false} />
+            <WeeklyReview />
+          </div>
+        );
       case 'growth': return <GrowthTracker />;
+      case 'plan': return <WeeklyPlan />;
       case 'grocery': return <GroceryList />;
       case 'todos': return <Todos />;
-      case 'reports': return <ReportCenter />;
-      case 'review': return <WeeklyReview />;
       case 'reminders': return <ReminderCenter onGotoTab={setActiveTab} />;
-      default: return <Principles />;
+      default: return <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} />;
     }
   };
 
@@ -170,26 +198,43 @@ function App() {
             {/* Top row on mobile: Title + Actions */}
             <div className="flex items-center justify-between gap-4 min-w-0">
               <div className="flex items-center gap-3 shrink-0 min-w-0">
-                <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200">
-                  <Sparkles size={20} />
+                <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 font-extrabold text-base overflow-hidden">
+                  {childAvatar ? (
+                    <img src={childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
+                  ) : (
+                    childInitial
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600 leading-tight truncate">
-                    {userProfile?.childName ? `${userProfile.childName}的健康成长执行清单` : '宝贝健康成长执行清单'}
+                    {userProfile?.childName ? `${userProfile.childName}的成长管理` : '宝贝成长管理'}
                   </h1>
                   <p className="mt-0.5 text-xs font-medium text-stone-500 flex items-center gap-1.5 truncate">
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
                     <span className="truncate">{getSubtitle()}</span>
                   </p>
-                  <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-pink-50 border border-pink-100 text-[11px] font-bold text-pink-600 max-w-full">
-                    <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
-                    <span className="truncate">数据视图：{childMeta.selectedName || userProfile?.childName || '未选择孩子'}</span>
-                  </div>
+
                 </div>
               </div>
               
               {/* Mobile Actions */}
               <div className="flex items-center gap-1 shrink-0 lg:hidden">
+                <button
+                  onClick={() => setActiveTab('reminders')}
+                  className={`p-2 rounded-xl transition-colors ${reminderCount > 0 ? 'text-amber-600 hover:bg-amber-50' : 'text-stone-500 hover:bg-stone-50'}`}
+                  title="提醒中心"
+                >
+                  <Bell size={20} />
+                </button>
+                {children.length > 1 && (
+                  <button
+                    onClick={handleQuickSwitchChild}
+                    className="p-2 text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
+                    title={`快速切换孩子（当前：${childMeta.selectedName || userProfile?.childName || '未选择'}）`}
+                  >
+                    <Repeat size={20} />
+                  </button>
+                )}
                 <button
                   onClick={() => setShowSettings(true)}
                   className="p-2 text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
@@ -209,8 +254,17 @@ function App() {
             
             {/* Bottom row on mobile: Navigation */}
             <div className="flex items-center gap-3 min-w-0 lg:flex-1 lg:justify-end">
+              <button
+                onClick={handleQuickSwitchChild}
+                disabled={children.length <= 1}
+                className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl transition-colors whitespace-nowrap ${children.length > 1 ? 'text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100' : 'text-stone-400 bg-stone-50 border border-stone-200 cursor-not-allowed'}`}
+                title={children.length > 1 ? `快速切换孩子（当前：${childMeta.selectedName || userProfile?.childName || '未选择'}）` : '暂无可切换孩子'}
+              >
+                <Repeat size={16} />
+                <span>切换孩子</span>
+              </button>
               <div className="w-full overflow-x-auto hide-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 lg:w-auto">
-                <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max lg:w-auto mx-auto lg:mx-0">
+                <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max lg:w-full lg:flex-wrap lg:justify-end mx-auto lg:mx-0">
                   <TabButton 
                     active={activeTab === 'dashboard'} 
                     onClick={() => setActiveTab('dashboard')} 
@@ -218,28 +272,16 @@ function App() {
                     label="总览" 
                   />
                   <TabButton 
-                    active={activeTab === 'principles'} 
-                    onClick={() => setActiveTab('principles')} 
-                    icon={<BookOpen size={16} />} 
-                    label="核心原则" 
+                    active={activeTab === 'growth'} 
+                    onClick={() => setActiveTab('growth')} 
+                    icon={<TrendingUp size={16} />} 
+                    label="生长记录" 
                   />
                   <TabButton 
                     active={activeTab === 'plan'} 
                     onClick={() => setActiveTab('plan')} 
                     icon={<CalendarDays size={16} />} 
                     label="一周计划" 
-                  />
-                  <TabButton 
-                    active={activeTab === 'stats'} 
-                    onClick={() => setActiveTab('stats')} 
-                    icon={<BarChart2 size={16} />} 
-                    label="数据统计" 
-                  />
-                  <TabButton 
-                    active={activeTab === 'growth'} 
-                    onClick={() => setActiveTab('growth')} 
-                    icon={<TrendingUp size={16} />} 
-                    label="生长记录" 
                   />
                   <TabButton 
                     active={activeTab === 'grocery'} 
@@ -253,33 +295,20 @@ function App() {
                     icon={<ListTodo size={16} />} 
                     label="备忘待办" 
                   />
-                  <TabButton 
-                    active={activeTab === 'reports'} 
-                    onClick={() => setActiveTab('reports')} 
-                    icon={<FileText size={16} />} 
-                    label="成长报告" 
-                  />
-                  <TabButton 
-                    active={activeTab === 'review'} 
-                    onClick={() => setActiveTab('review')} 
-                    icon={<RefreshCcw size={16} />} 
-                    label="周复盘" 
-                  />
-                  <TabButton 
-                    active={activeTab === 'reminders'} 
-                    onClick={() => setActiveTab('reminders')} 
-                    icon={<Siren size={16} />} 
-                    label="提醒中心" 
-                  />
                 </nav>
               </div>
               
               {/* Desktop Actions */}
               <div className="hidden lg:flex items-center gap-2 shrink-0 ml-2 pl-4 border-l border-pink-100">
-                <div className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 ${reminderCount > 0 ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-stone-50 text-stone-500 border border-stone-200'}`} title="提醒状态">
+                <button
+                  onClick={() => setActiveTab('reminders')}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border transition-colors ${reminderCount > 0 ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100' : 'bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100'}`}
+                  title="提醒中心"
+                >
                   <Bell size={14} />
                   <span>{reminderCount > 0 ? `提醒 ${reminderCount}` : '无提醒'}</span>
-                </div>
+                </button>
+
                 <button
                   onClick={() => setShowSettings(true)}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors whitespace-nowrap"
@@ -305,7 +334,7 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Suspense fallback={<div className="animate-pulse text-center py-10 text-stone-400">模块加载中...</div>}>
-          {renderContent()}
+          <div key={contextVersion}>{renderContent()}</div>
         </Suspense>
       </main>
 
@@ -324,9 +353,9 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-300 ${
-        active 
-          ? 'bg-white text-pink-600 shadow-sm border border-pink-100 scale-100' 
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-300 shrink-0 ${
+        active
+          ? 'bg-white text-pink-600 shadow-sm border border-pink-100 scale-100'
           : 'text-stone-500 hover:bg-pink-50/50 hover:text-pink-500 scale-95 hover:scale-100 border border-transparent'
       }`}
     >

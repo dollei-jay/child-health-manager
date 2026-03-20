@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, User, Calendar, Activity } from 'lucide-react';
+import { X, Save, User, Calendar, Activity, ImagePlus } from 'lucide-react';
 import { api } from '../api';
 import ChildManager from './ChildManager';
 
@@ -16,6 +16,7 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
   const [childBirthDate, setChildBirthDate] = useState('');
   const [childGender, setChildGender] = useState('girl');
   const [childGoal, setChildGoal] = useState('');
+  const [childAvatar, setChildAvatar] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -24,8 +25,16 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
       setChildBirthDate(userProfile.childBirthDate || '');
       setChildGender(userProfile.childGender || 'girl');
       setChildGoal(userProfile.childGoal || '');
+      setChildAvatar(userProfile.childAvatar || '');
     }
   }, [userProfile]);
+
+  const handleAvatarSelect = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setChildAvatar(String(reader.result || '').slice(0, 250000));
+    reader.readAsDataURL(file);
+  };
 
   if (!isOpen) return null;
 
@@ -47,7 +56,8 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
         childName,
         childBirthDate,
         childGender,
-        childGoal
+        childGoal,
+        childAvatar
       };
       await api.updateProfile(updatedProfile);
       await refreshProfile();
@@ -113,6 +123,21 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
                   className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
                 />
               </div>
+              <label className="flex items-center gap-3 px-3 py-2.5 border border-stone-200 rounded-xl bg-stone-50 cursor-pointer hover:bg-pink-50 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center overflow-hidden font-bold text-sm">
+                  {childAvatar ? <img src={childAvatar} alt="头像预览" className="w-full h-full object-cover" /> : <ImagePlus size={16} />}
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-bold text-stone-700">上传孩子头像（可选）</p>
+                  <p className="text-xs text-stone-500">支持注册后自定义修改</p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleAvatarSelect(e.target.files?.[0])}
+                />
+              </label>
             </div>
             <div className="pt-2">
               <button

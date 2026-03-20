@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sparkles, LogIn, UserPlus, Mail, Lock, User, Calendar, Activity } from 'lucide-react';
+import { Sparkles, LogIn, UserPlus, Mail, Lock, User, Calendar, Activity, ImagePlus } from 'lucide-react';
 import { api, setToken } from '../api';
 
 interface AuthProps {
@@ -14,8 +14,19 @@ export default function Auth({ onLogin }: AuthProps) {
   const [childBirthDate, setChildBirthDate] = useState('');
   const [childGender, setChildGender] = useState('girl');
   const [childGoal, setChildGoal] = useState('');
+  const [childAvatar, setChildAvatar] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleAvatarSelect = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      setChildAvatar(result.slice(0, 250000));
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +45,8 @@ export default function Auth({ onLogin }: AuthProps) {
           childName,
           childBirthDate,
           childGender,
-          childGoal
+          childGoal,
+          childAvatar
         });
         setToken(res.token);
         onLogin();
@@ -138,6 +150,21 @@ export default function Auth({ onLogin }: AuthProps) {
                     className="w-full pl-10 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
                   />
                 </div>
+                <label className="flex items-center gap-3 px-3 py-2.5 border border-stone-200 rounded-xl bg-stone-50 cursor-pointer hover:bg-pink-50 transition-colors">
+                  <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center overflow-hidden font-bold text-sm">
+                    {childAvatar ? <img src={childAvatar} alt="头像预览" className="w-full h-full object-cover" /> : <ImagePlus size={16} />}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-stone-700">上传孩子头像（可选）</p>
+                    <p className="text-xs text-stone-500">注册时可直接设置，后续也可在设置中修改</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleAvatarSelect(e.target.files?.[0])}
+                  />
+                </label>
               </div>
             )}
           </div>

@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, Sparkles } from 'lucide-react';
+import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, Calendar, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { api } from '../api';
+import { getMonthDates } from '../utils';
 
 interface DashboardProps {
   childName?: string;
+  childAvatar?: string;
 }
 
 interface Todo {
@@ -22,21 +24,24 @@ interface GrowthRecord {
   createdAt?: string;
 }
 
-export default function Dashboard({ childName }: DashboardProps) {
+export default function Dashboard({ childName, childAvatar }: DashboardProps) {
   const [loading, setLoading] = useState(true);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
   const [weeklyPlanData, setWeeklyPlanData] = useState<any[] | null>(null);
   const [groceryData, setGroceryData] = useState<Record<string, string[]> | null>(null);
+  const [checklistData, setChecklistData] = useState<Record<string, boolean>>({});
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [todosRes, growthRes, weeklyPlanRes, groceryRes] = await Promise.all([
+        const [todosRes, growthRes, weeklyPlanRes, groceryRes, checklistRes] = await Promise.all([
           api.getTodos(),
           api.getGrowthRecords(),
           api.getWeeklyPlan(),
-          api.getGroceryList()
+          api.getGroceryList(),
+          api.getChecklist()
         ]);
 
         setTodos(Array.isArray(todosRes) ? todosRes : []);
@@ -56,6 +61,16 @@ export default function Dashboard({ childName }: DashboardProps) {
           } catch {
             setGroceryData(null);
           }
+        }
+
+        if (checklistRes?.checkedItems) {
+          try {
+            setChecklistData(JSON.parse(checklistRes.checkedItems));
+          } catch {
+            setChecklistData({});
+          }
+        } else {
+          setChecklistData({});
         }
       } catch (error) {
         console.error('Failed to load dashboard data', error);
@@ -96,6 +111,41 @@ export default function Dashboard({ childName }: DashboardProps) {
     }, 0);
   }, [groceryData]);
 
+  const calendarData = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const monthDates = getMonthDates(year, month);
+
+    const tasksByDate: Record<string, number> = {};
+    Object.entries(checklistData).forEach(([key, checked]) => {
+      if (!checked || typeof key !== 'string') return;
+      const date = key.substring(0, 10);
+      tasksByDate[date] = (tasksByDate[date] || 0) + 1;
+    });
+
+    const mapped = monthDates.map((d) => ({
+      ...d,
+      count: tasksByDate[d.date] || 0
+    }));
+
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthDoneTasks = Object.entries(tasksByDate).reduce((acc, [date, count]) => {
+      return date.startsWith(monthPrefix) ? acc + count : acc;
+    }, 0);
+    const perfectDays = mapped.filter((d) => d.isCurrentMonth && d.count >= 5).length;
+
+    return {
+      year,
+      month,
+      days: mapped,
+      monthDoneTasks,
+      perfectDays
+    };
+  }, [checklistData, currentDate]);
+
+  const prevMonth = () => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const nextMonth = () => setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+
   if (loading) {
     return <div className="animate-pulse text-center py-10 text-stone-400">加载总览数据中...</div>;
   }
@@ -112,8 +162,12 @@ export default function Dashboard({ childName }: DashboardProps) {
               先看关键数据，再进入各模块执行。
             </p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 shrink-0">
-            <Sparkles size={22} />
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 shrink-0 overflow-hidden ring-2 ring-white/80">
+            {childAvatar ? (
+              <img src={childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-extrabold text-lg">{(childName || '宝').charAt(0)}</span>
+            )}
           </div>
         </div>
       </div>
@@ -166,13 +220,65 @@ export default function Dashboard({ childName }: DashboardProps) {
           )}
         </section>
 
-        <section className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm">
-          <h3 className="text-lg font-extrabold text-stone-800 mb-4">本周执行建议</h3>
-          <ul className="space-y-3 text-sm text-stone-600 font-medium">
-            <li className="rounded-xl border border-stone-100 px-3 py-2.5 bg-stone-50/60">1) 先清空/完成当前待办，再补充本周新增事项。</li>
-            <li className="rounded-xl border border-stone-100 px-3 py-2.5 bg-stone-50/60">2) 每周至少新增 1 条生长记录，保证趋势可追踪。</li>
-            <li className="rounded-xl border border-stone-100 px-3 py-2.5 bg-stone-50/60">3) 周计划与采购清单联动维护，减少临时缺项。</li>
-          </ul>
+        <section className="bg-white rounded-3xl p-5 border border-stone-100 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-extrabold text-stone-800 flex items-center gap-2">
+              <Calendar size={18} className="text-pink-500" />
+              打卡日历
+            </h3>
+            <div className="flex items-center gap-1 bg-stone-50 border border-stone-100 rounded-xl p-1">
+              <button onClick={prevMonth} className="p-1.5 rounded-lg text-stone-500 hover:bg-white hover:shadow-sm transition-all">
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-xs font-bold text-stone-700 min-w-[82px] text-center">{calendarData.year}年{calendarData.month + 1}月</span>
+              <button onClick={nextMonth} className="p-1.5 rounded-lg text-stone-500 hover:bg-white hover:shadow-sm transition-all">
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="rounded-xl border border-pink-100 bg-pink-50 px-3 py-2">
+              <p className="text-[11px] text-pink-500 font-bold">本月打卡完成</p>
+              <p className="text-lg font-extrabold text-pink-600 leading-tight">{calendarData.monthDoneTasks} 项</p>
+            </div>
+            <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2">
+              <p className="text-[11px] text-rose-500 font-bold">完美达成天</p>
+              <p className="text-lg font-extrabold text-rose-600 leading-tight">{calendarData.perfectDays} 天</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5 mb-1">
+            {['一', '二', '三', '四', '五', '六', '日'].map((day) => (
+              <div key={day} className="text-center text-[10px] font-bold text-stone-400 py-1">{day}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1.5">
+            {calendarData.days.map((d, i) => {
+              const base = !d.isCurrentMonth ? 'bg-stone-50 text-stone-300' : d.count === 0 ? 'bg-white text-stone-500 border border-stone-100' : d.count <= 2 ? 'bg-pink-100 text-pink-600 border border-pink-200' : d.count <= 4 ? 'bg-pink-300 text-white border border-pink-400' : 'bg-gradient-to-br from-pink-400 to-rose-500 text-white';
+              return (
+                <div key={i} className={`h-9 rounded-lg flex flex-col items-center justify-center text-[11px] font-bold relative ${base}`} title={`${d.date} · 完成 ${d.count} 项`}>
+                  <span>{d.day}</span>
+                  {d.isCurrentMonth && d.count > 0 && d.count < 5 && (
+                    <div className="absolute bottom-1 flex gap-0.5">
+                      {Array.from({ length: Math.min(d.count, 3) }).map((_, idx) => (
+                        <span key={idx} className="w-1 h-1 rounded-full bg-current opacity-70"></span>
+                      ))}
+                    </div>
+                  )}
+                  {d.isCurrentMonth && d.count >= 5 && (
+                    <Star size={10} className="absolute bottom-1 fill-white text-white opacity-90" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between text-[10px] text-stone-500 font-medium">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pink-200"></span>部分完成</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pink-400"></span>多数完成</span>
+            <span className="inline-flex items-center gap-1"><Star size={10} className="text-rose-500" />完美达成</span>
+          </div>
         </section>
       </div>
     </div>

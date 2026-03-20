@@ -78,6 +78,7 @@ async function startServer() {
       )`);
 
       db.run(`ALTER TABLE users ADD COLUMN selectedChildId INTEGER`, () => {});
+      db.run(`ALTER TABLE users ADD COLUMN childAvatar TEXT`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS child_profiles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +87,7 @@ async function startServer() {
         childBirthDate TEXT,
         childGender TEXT,
         childGoal TEXT,
+        childAvatar TEXT,
         createdAt TEXT,
         updatedAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
@@ -93,8 +95,8 @@ async function startServer() {
 
       // migrate legacy single-child data into child_profiles
       db.run(
-        `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
-         SELECT u.id, u.childName, u.childBirthDate, u.childGender, u.childGoal, COALESCE(u.createdAt, datetime('now')), datetime('now')
+        `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt)
+         SELECT u.id, u.childName, u.childBirthDate, u.childGender, u.childGoal, u.childAvatar, COALESCE(u.createdAt, datetime('now')), datetime('now')
          FROM users u
          WHERE u.childName IS NOT NULL
            AND TRIM(u.childName) <> ''
@@ -120,6 +122,8 @@ async function startServer() {
         createdAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`ALTER TABLE child_profiles ADD COLUMN childAvatar TEXT`, () => {});
 
       db.run(`ALTER TABLE todos ADD COLUMN childProfileId INTEGER`, () => {});
 
@@ -344,6 +348,13 @@ async function startServer() {
     return isValidDateString(dateStr) ? dateStr : null;
   };
 
+  const normalizeAvatarData = (value: any) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    if (!raw.startsWith('data:image/')) return '';
+    return raw.slice(0, 250000);
+  };
+
   const buildReminderHash = (type: string, detail: string) => {
     const src = `${type}|${detail}`;
     let hash = 0;
@@ -377,7 +388,7 @@ async function startServer() {
 
   // Register
   app.post('/api/auth/register', async (req, res) => {
-    const { email, password, childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const { email, password, childName, childBirthDate, childGender, childGoal, childAvatar } = req.body || {};
 
     const normalizedEmail = String(email ?? '').trim().toLowerCase();
     const normalizedPassword = String(password ?? '');
@@ -402,7 +413,7 @@ async function startServer() {
       const createdAt = new Date().toISOString();
 
       db.run(
-        `INSERT INTO users (email, password, childName, childBirthDate, childGender, childGoal, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (email, password, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           normalizedEmail,
           hashedPassword,
@@ -410,6 +421,7 @@ async function startServer() {
           normalizedBirthDate,
           normalizedGender,
           normalizeText(childGoal, 120),
+          normalizeAvatarData(childAvatar),
           createdAt
         ],
         function (err) {
@@ -434,9 +446,9 @@ async function startServer() {
           }
 
           db.run(
-            `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [userId, initialChildName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), createdAt, createdAt],
+            `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, initialChildName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), normalizeAvatarData(childAvatar), createdAt, createdAt],
             function (childErr) {
               if (!childErr && this?.lastID) {
                 db.run(`UPDATE users SET selectedChildId = ? WHERE id = ?`, [this.lastID, userId], () => {
@@ -502,7 +514,7 @@ async function startServer() {
   // Child Profiles
   app.get('/api/children', authenticateToken, (req: any, res) => {
     db.all(
-      `SELECT id, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt
+      `SELECT id, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt
        FROM child_profiles WHERE userId = ? ORDER BY id ASC`,
       [req.user.id],
       (err, rows: any[]) => {
@@ -517,7 +529,7 @@ async function startServer() {
   });
 
   app.post('/api/children', authenticateToken, (req: any, res) => {
-    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const { childName, childBirthDate, childGender, childGoal, childAvatar } = req.body || {};
     const name = normalizeText(childName, 50);
     if (!name) return res.status(400).json({ error: 'childName is required' });
 
@@ -526,9 +538,9 @@ async function startServer() {
     const birthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
 
     db.run(
-      `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.id, name, birthDate, gender, normalizeText(childGoal, 120), now, now],
+      `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.id, name, birthDate, gender, normalizeText(childGoal, 120), normalizeAvatarData(childAvatar), now, now],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
 
@@ -544,7 +556,7 @@ async function startServer() {
     const childId = Number(req.params.id);
     if (Number.isNaN(childId) || childId <= 0) return res.status(400).json({ error: 'invalid child id' });
 
-    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const { childName, childBirthDate, childGender, childGoal, childAvatar } = req.body || {};
     const name = normalizeText(childName, 50);
     if (!name) return res.status(400).json({ error: 'childName is required' });
 
@@ -554,9 +566,9 @@ async function startServer() {
 
     db.run(
       `UPDATE child_profiles
-       SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, updatedAt = ?
+       SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, childAvatar = ?, updatedAt = ?
        WHERE id = ? AND userId = ?`,
-      [name, birthDate, gender, normalizeText(childGoal, 120), now, childId, req.user.id],
+      [name, birthDate, gender, normalizeText(childGoal, 120), normalizeAvatarData(childAvatar), now, childId, req.user.id],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
         if (!this.changes) return res.status(404).json({ error: 'child profile not found' });
@@ -673,12 +685,13 @@ async function startServer() {
             childName: '',
             childBirthDate: null,
             childGender: 'girl',
-            childGoal: ''
+            childGoal: '',
+            childAvatar: ''
           });
         }
 
         db.get(
-          `SELECT childName, childBirthDate, childGender, childGoal FROM child_profiles WHERE id = ? AND userId = ?`,
+          `SELECT childName, childBirthDate, childGender, childGoal, childAvatar FROM child_profiles WHERE id = ? AND userId = ?`,
           [selectedChildId, req.user.id],
           (cErr, child: any) => {
             if (cErr) return res.status(500).json({ error: cErr.message });
@@ -688,7 +701,8 @@ async function startServer() {
               childName: child?.childName || '',
               childBirthDate: child?.childBirthDate || null,
               childGender: child?.childGender || 'girl',
-              childGoal: child?.childGoal || ''
+              childGoal: child?.childGoal || '',
+              childAvatar: child?.childAvatar || ''
             });
           }
         );
@@ -700,7 +714,7 @@ async function startServer() {
 
   // Backward-compatible update profile (writes selected child)
   app.put('/api/profile', authenticateToken, async (req: any, res) => {
-    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const { childName, childBirthDate, childGender, childGoal, childAvatar } = req.body || {};
 
     const normalizedGender = childGender === 'boy' ? 'boy' : 'girl';
     const normalizedBirthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
@@ -714,9 +728,9 @@ async function startServer() {
 
       if (!selectedChildId) {
         db.run(
-          `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [req.user.id, normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), now, now],
+          `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [req.user.id, normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), normalizeAvatarData(childAvatar), now, now],
           function (err) {
             if (err) return res.status(500).json({ error: err.message });
             const newId = Number(this.lastID);
@@ -732,9 +746,9 @@ async function startServer() {
 
       db.run(
         `UPDATE child_profiles
-         SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, updatedAt = ?
+         SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, childAvatar = ?, updatedAt = ?
          WHERE id = ? AND userId = ?`,
-        [normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), now, selectedChildId, req.user.id],
+        [normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), normalizeAvatarData(childAvatar), now, selectedChildId, req.user.id],
         function (err) {
           if (err) return res.status(500).json({ error: err.message });
           logAudit(db, { userId: req.user.id, action: 'profile_update', status: 'success', ip: getClientIp(req), detail: `updated childId=${selectedChildId}` });
