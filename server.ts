@@ -1135,6 +1135,110 @@ async function startServer() {
     );
   });
 
+  // Reminders (in-app)
+  app.get('/api/reminders', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) {
+        return res.json({ childProfileId: null, items: [] });
+      }
+
+      const today = startOfDay(new Date());
+      const todayISO = toDateString(today);
+
+      db.all(
+        `SELECT id, text, completed, dueDate, priority FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC`,
+        [req.user.id, selectedChildId],
+        (todoErr: any, todoRows: any[]) => {
+          if (todoErr) return res.status(500).json({ error: todoErr.message });
+
+          const items: any[] = [];
+
+          const dueToday = (todoRows || []).filter((t: any) => !t.completed && t.dueDate === todayISO);
+          if (dueToday.length > 0) {
+            items.push({
+              type: 'todo_due_today',
+              level: 'warning',
+              title: `今日到期待办 ${dueToday.length} 项`,
+              detail: dueToday.slice(0, 3).map((t: any) => t.text).join('；')
+            });
+          }
+
+          const overdue = (todoRows || []).filter((t: any) => {
+            if (t.completed || !t.dueDate) return false;
+            const d = new Date(t.dueDate);
+            return !Number.isNaN(d.getTime()) && startOfDay(d) < today;
+          });
+          if (overdue.length > 0) {
+            items.push({
+              type: 'todo_overdue',
+              level: 'danger',
+              title: `逾期待办 ${overdue.length} 项`,
+              detail: overdue.slice(0, 3).map((t: any) => t.text).join('；')
+            });
+          }
+
+          db.get(
+            `SELECT MAX(date) AS latestDate FROM growth_records WHERE userId = ? AND childProfileId = ?`,
+            [req.user.id, selectedChildId],
+            (growthErr: any, growthRow: any) => {
+              if (growthErr) return res.status(500).json({ error: growthErr.message });
+
+              const latestDate = growthRow?.latestDate;
+              if (!latestDate) {
+                items.push({
+                  type: 'growth_missing',
+                  level: 'warning',
+                  title: '尚无生长记录',
+                  detail: '建议本周至少补录 1 条身高/体重数据'
+                });
+              } else {
+                const latest = startOfDay(new Date(latestDate));
+                const diffDays = Math.floor((today.getTime() - latest.getTime()) / (24 * 60 * 60 * 1000));
+                if (diffDays >= 8) {
+                  items.push({
+                    type: 'growth_stale',
+                    level: 'warning',
+                    title: `生长记录已 ${diffDays} 天未更新`,
+                    detail: '建议每周至少记录一次'
+                  });
+                }
+              }
+
+              const weekStart = toDateString(getWeekStartMonday(today));
+              db.get(
+                `SELECT id FROM weekly_reviews WHERE userId = ? AND weekStart = ?`,
+                [req.user.id, weekStart],
+                (reviewErr: any, reviewRow: any) => {
+                  if (reviewErr) return res.status(500).json({ error: reviewErr.message });
+
+                  const day = today.getDay(); // 0 Sun, 1 Mon...
+                  const isWeekend = day === 0 || day === 6;
+                  if (isWeekend && !reviewRow?.id) {
+                    items.push({
+                      type: 'weekly_review_missing',
+                      level: 'info',
+                      title: '本周复盘尚未填写',
+                      detail: '建议本周末完成周复盘，形成闭环'
+                    });
+                  }
+
+                  return res.json({
+                    childProfileId: selectedChildId,
+                    date: todayISO,
+                    items
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to build reminders' });
+    }
+  });
+
   // Weekly Report
   app.get('/api/reports/weekly', authenticateToken, (req: any, res) => {
     const daysRaw = Number(req.query.days || 7);

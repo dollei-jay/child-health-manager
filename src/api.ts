@@ -299,5 +299,14 @@ export const api = {
       throw new Error(err.error || 'Failed to fetch weekly report');
     }
     return res.json();
+  },
+
+  async getReminders() {
+    const res = await fetch(`${API_URL}/reminders`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch reminders');
+    }
+    return res.json();
   }
 };

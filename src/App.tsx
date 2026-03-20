@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw } from 'lucide-react';
+import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw, Bell } from 'lucide-react';
 import Auth from './components/Auth';
 import ProfileSettings from './components/ProfileSettings';
 
@@ -34,6 +34,7 @@ function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [childMeta, setChildMeta] = useState<ChildMeta>({ total: 0, selectedName: '' });
+  const [reminderCount, setReminderCount] = useState(0);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -69,6 +70,13 @@ function App() {
       setChildMeta({ total: items.length, selectedName: selected?.childName || profile?.childName || '' });
     } catch {
       setChildMeta({ total: profile?.childName ? 1 : 0, selectedName: profile?.childName || '' });
+    }
+
+    try {
+      const reminders = await api.getReminders();
+      setReminderCount(Array.isArray(reminders?.items) ? reminders.items.length : 0);
+    } catch {
+      setReminderCount(0);
     }
   };
 
@@ -260,6 +268,10 @@ function App() {
               
               {/* Desktop Actions */}
               <div className="hidden lg:flex items-center gap-2 shrink-0 ml-2 pl-4 border-l border-pink-100">
+                <div className={`px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 ${reminderCount > 0 ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-stone-50 text-stone-500 border border-stone-200'}`} title="提醒状态">
+                  <Bell size={14} />
+                  <span>{reminderCount > 0 ? `提醒 ${reminderCount}` : '无提醒'}</span>
+                </div>
                 <button
                   onClick={() => setShowSettings(true)}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors whitespace-nowrap"
