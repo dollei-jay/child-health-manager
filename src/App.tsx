@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText, RefreshCcw } from 'lucide-react';
-import WeeklyPlan from './components/WeeklyPlan';
-import GroceryList from './components/GroceryList';
-import Principles from './components/Principles';
-import Stats from './components/Stats';
-import GrowthTracker from './components/GrowthTracker';
 import Auth from './components/Auth';
-import Todos from './components/Todos';
 import ProfileSettings from './components/ProfileSettings';
-import Dashboard from './components/Dashboard';
-import ReportCenter from './components/ReportCenter';
-import WeeklyReview from './components/WeeklyReview';
+
+const WeeklyPlan = lazy(() => import('./components/WeeklyPlan'));
+const GroceryList = lazy(() => import('./components/GroceryList'));
+const Principles = lazy(() => import('./components/Principles'));
+const Stats = lazy(() => import('./components/Stats'));
+const GrowthTracker = lazy(() => import('./components/GrowthTracker'));
+const Todos = lazy(() => import('./components/Todos'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const ReportCenter = lazy(() => import('./components/ReportCenter'));
+const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
 import { api, getToken, removeToken } from './api';
 
 interface UserProfile {
@@ -257,7 +258,9 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {renderContent()}
+        <Suspense fallback={<div className="animate-pulse text-center py-10 text-stone-400">模块加载中...</div>}>
+          {renderContent()}
+        </Suspense>
       </main>
 
       <ProfileSettings 

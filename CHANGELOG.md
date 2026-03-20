@@ -14,6 +14,8 @@
 - 顶部导航新增「成长报告」入口
 
 ### Changed
+- 前端构建优化：启用路由/模块懒加载（lazy + Suspense）
+- 构建拆包优化：recharts 与图标库独立 chunk，降低主包体积
 - API 客户端新增 `getWeeklyReport(days)`
 - README 增补“成长报告中心”功能说明
 
