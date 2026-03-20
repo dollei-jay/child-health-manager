@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- 新增提醒摘要接口：`GET /api/reminders/digest`（用于计划推送）
+- 重构提醒聚合逻辑为可复用函数，支持站内与推送复用同一规则
 - 新增提醒状态管理：已读 / 静默（snooze）
 - 新增提醒状态接口：
   - `POST /api/reminders/:type/:hash/read`

@@ -1157,134 +1157,158 @@ async function startServer() {
   });
 
   // Reminders (in-app)
+  const dbGetP = (sql: string, params: any[] = []) =>
+    new Promise<any>((resolve, reject) => {
+      db.get(sql, params, (err: any, row: any) => (err ? reject(err) : resolve(row)));
+    });
+
+  const dbAllP = (sql: string, params: any[] = []) =>
+    new Promise<any[]>((resolve, reject) => {
+      db.all(sql, params, (err: any, rows: any[]) => (err ? reject(err) : resolve(rows || [])));
+    });
+
+  const buildRemindersForUser = async (userId: number) => {
+    const selectedChildId = await getSelectedChildId(userId);
+    if (!selectedChildId) {
+      return { childProfileId: null, date: toDateString(startOfDay(new Date())), items: [] as any[] };
+    }
+
+    const today = startOfDay(new Date());
+    const todayISO = toDateString(today);
+
+    const todoRows = await dbAllP(
+      `SELECT id, text, completed, dueDate, priority FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC`,
+      [userId, selectedChildId]
+    );
+
+    const items: any[] = [];
+
+    const dueToday = (todoRows || []).filter((t: any) => !t.completed && t.dueDate === todayISO);
+    if (dueToday.length > 0) {
+      items.push({
+        type: 'todo_due_today',
+        level: 'warning',
+        title: `今日到期待办 ${dueToday.length} 项`,
+        detail: dueToday.slice(0, 3).map((t: any) => t.text).join('；')
+      });
+    }
+
+    const overdue = (todoRows || []).filter((t: any) => {
+      if (t.completed || !t.dueDate) return false;
+      const d = new Date(t.dueDate);
+      return !Number.isNaN(d.getTime()) && startOfDay(d) < today;
+    });
+    if (overdue.length > 0) {
+      items.push({
+        type: 'todo_overdue',
+        level: 'danger',
+        title: `逾期待办 ${overdue.length} 项`,
+        detail: overdue.slice(0, 3).map((t: any) => t.text).join('；')
+      });
+    }
+
+    const growthRow = await dbGetP(
+      `SELECT MAX(date) AS latestDate FROM growth_records WHERE userId = ? AND childProfileId = ?`,
+      [userId, selectedChildId]
+    );
+
+    const latestDate = growthRow?.latestDate;
+    if (!latestDate) {
+      items.push({
+        type: 'growth_missing',
+        level: 'warning',
+        title: '尚无生长记录',
+        detail: '建议本周至少补录 1 条身高/体重数据'
+      });
+    } else {
+      const latest = startOfDay(new Date(latestDate));
+      const diffDays = Math.floor((today.getTime() - latest.getTime()) / (24 * 60 * 60 * 1000));
+      if (diffDays >= 8) {
+        items.push({
+          type: 'growth_stale',
+          level: 'warning',
+          title: `生长记录已 ${diffDays} 天未更新`,
+          detail: '建议每周至少记录一次'
+        });
+      }
+    }
+
+    const weekStart = toDateString(getWeekStartMonday(today));
+    const reviewRow = await dbGetP(`SELECT id FROM weekly_reviews WHERE userId = ? AND weekStart = ?`, [userId, weekStart]);
+
+    const day = today.getDay();
+    const isWeekend = day === 0 || day === 6;
+    if (isWeekend && !reviewRow?.id) {
+      items.push({
+        type: 'weekly_review_missing',
+        level: 'info',
+        title: '本周复盘尚未填写',
+        detail: '建议本周末完成周复盘，形成闭环'
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    const stateRows = await dbAllP(
+      `SELECT reminderType, reminderHash, status, snoozeUntil FROM reminder_states WHERE userId = ? AND childProfileId = ?`,
+      [userId, selectedChildId]
+    );
+
+    const stateMap = new Map<string, any>();
+    (stateRows || []).forEach((r) => stateMap.set(`${r.reminderType}|${r.reminderHash}`, r));
+
+    const filtered = items
+      .map((it) => {
+        const hash = buildReminderHash(it.type, String(it.detail || ''));
+        const key = `${it.type}|${hash}`;
+        const st = stateMap.get(key);
+        const snoozed = st?.status === 'snoozed' && st?.snoozeUntil && st.snoozeUntil > nowIso;
+        const read = st?.status === 'read';
+        return {
+          ...it,
+          reminderHash: hash,
+          status: snoozed ? 'snoozed' : read ? 'read' : 'active'
+        };
+      })
+      .filter((it) => it.status !== 'read' && it.status !== 'snoozed');
+
+    return {
+      childProfileId: selectedChildId,
+      date: todayISO,
+      items: filtered
+    };
+  };
+
   app.get('/api/reminders', authenticateToken, async (req: any, res) => {
     try {
-      const selectedChildId = await getSelectedChildId(req.user.id);
-      if (!selectedChildId) {
-        return res.json({ childProfileId: null, items: [] });
-      }
-
-      const today = startOfDay(new Date());
-      const todayISO = toDateString(today);
-
-      db.all(
-        `SELECT id, text, completed, dueDate, priority FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC`,
-        [req.user.id, selectedChildId],
-        (todoErr: any, todoRows: any[]) => {
-          if (todoErr) return res.status(500).json({ error: todoErr.message });
-
-          const items: any[] = [];
-
-          const dueToday = (todoRows || []).filter((t: any) => !t.completed && t.dueDate === todayISO);
-          if (dueToday.length > 0) {
-            items.push({
-              type: 'todo_due_today',
-              level: 'warning',
-              title: `今日到期待办 ${dueToday.length} 项`,
-              detail: dueToday.slice(0, 3).map((t: any) => t.text).join('；')
-            });
-          }
-
-          const overdue = (todoRows || []).filter((t: any) => {
-            if (t.completed || !t.dueDate) return false;
-            const d = new Date(t.dueDate);
-            return !Number.isNaN(d.getTime()) && startOfDay(d) < today;
-          });
-          if (overdue.length > 0) {
-            items.push({
-              type: 'todo_overdue',
-              level: 'danger',
-              title: `逾期待办 ${overdue.length} 项`,
-              detail: overdue.slice(0, 3).map((t: any) => t.text).join('；')
-            });
-          }
-
-          db.get(
-            `SELECT MAX(date) AS latestDate FROM growth_records WHERE userId = ? AND childProfileId = ?`,
-            [req.user.id, selectedChildId],
-            (growthErr: any, growthRow: any) => {
-              if (growthErr) return res.status(500).json({ error: growthErr.message });
-
-              const latestDate = growthRow?.latestDate;
-              if (!latestDate) {
-                items.push({
-                  type: 'growth_missing',
-                  level: 'warning',
-                  title: '尚无生长记录',
-                  detail: '建议本周至少补录 1 条身高/体重数据'
-                });
-              } else {
-                const latest = startOfDay(new Date(latestDate));
-                const diffDays = Math.floor((today.getTime() - latest.getTime()) / (24 * 60 * 60 * 1000));
-                if (diffDays >= 8) {
-                  items.push({
-                    type: 'growth_stale',
-                    level: 'warning',
-                    title: `生长记录已 ${diffDays} 天未更新`,
-                    detail: '建议每周至少记录一次'
-                  });
-                }
-              }
-
-              const weekStart = toDateString(getWeekStartMonday(today));
-              db.get(
-                `SELECT id FROM weekly_reviews WHERE userId = ? AND weekStart = ?`,
-                [req.user.id, weekStart],
-                (reviewErr: any, reviewRow: any) => {
-                  if (reviewErr) return res.status(500).json({ error: reviewErr.message });
-
-                  const day = today.getDay(); // 0 Sun, 1 Mon...
-                  const isWeekend = day === 0 || day === 6;
-                  if (isWeekend && !reviewRow?.id) {
-                    items.push({
-                      type: 'weekly_review_missing',
-                      level: 'info',
-                      title: '本周复盘尚未填写',
-                      detail: '建议本周末完成周复盘，形成闭环'
-                    });
-                  }
-
-                  const nowIso = new Date().toISOString();
-
-                  db.all(
-                    `SELECT reminderType, reminderHash, status, snoozeUntil FROM reminder_states WHERE userId = ? AND childProfileId = ?`,
-                    [req.user.id, selectedChildId],
-                    (stateErr: any, stateRows: any[]) => {
-                      if (stateErr) return res.status(500).json({ error: stateErr.message });
-
-                      const stateMap = new Map<string, any>();
-                      (stateRows || []).forEach((r) => stateMap.set(`${r.reminderType}|${r.reminderHash}`, r));
-
-                      const filtered = items
-                        .map((it) => {
-                          const hash = buildReminderHash(it.type, String(it.detail || ''));
-                          const key = `${it.type}|${hash}`;
-                          const st = stateMap.get(key);
-                          const snoozed = st?.status === 'snoozed' && st?.snoozeUntil && st.snoozeUntil > nowIso;
-                          const read = st?.status === 'read';
-                          return {
-                            ...it,
-                            reminderHash: hash,
-                            status: snoozed ? 'snoozed' : read ? 'read' : 'active'
-                          };
-                        })
-                        .filter((it) => it.status !== 'read' && it.status !== 'snoozed');
-
-                      return res.json({
-                        childProfileId: selectedChildId,
-                        date: todayISO,
-                        items: filtered
-                      });
-                    }
-                  );
-                }
-              );
-            }
-          );
-        }
-      );
+      const data = await buildRemindersForUser(req.user.id);
+      return res.json(data);
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'failed to build reminders' });
+    }
+  });
+
+  // Digest for scheduled push / cron usage
+  app.get('/api/reminders/digest', authenticateToken, async (req: any, res) => {
+    try {
+      const data = await buildRemindersForUser(req.user.id);
+      const danger = data.items.filter((i: any) => i.level === 'danger').length;
+      const warning = data.items.filter((i: any) => i.level === 'warning').length;
+      const info = data.items.filter((i: any) => i.level === 'info').length;
+
+      const top = data.items.slice(0, 3).map((i: any) => `- [${i.level}] ${i.title}`).join('\\n');
+      const text = data.items.length
+        ? `【提醒摘要】${data.date}\\n危险 ${danger} · 预警 ${warning} · 提示 ${info}\\n${top}`
+        : `【提醒摘要】${data.date}\\n当前无提醒`;
+
+      return res.json({
+        childProfileId: data.childProfileId,
+        date: data.date,
+        counts: { danger, warning, info, total: data.items.length },
+        text,
+        items: data.items
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to build reminder digest' });
     }
   });
 
