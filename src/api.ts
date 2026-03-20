@@ -154,6 +154,28 @@ export const api = {
     return res.json();
   },
 
+  async getWeeklyReview(weekStart: string) {
+    const res = await fetch(`${API_URL}/weekly-review?weekStart=${encodeURIComponent(weekStart)}`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch weekly review');
+    }
+    return res.json();
+  },
+
+  async saveWeeklyReview(data: { weekStart: string; summary: string; blockers: string; nextFocus: string; score: number }) {
+    const res = await fetch(`${API_URL}/weekly-review`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to save weekly review');
+    }
+    return res.json();
+  },
+
   async getGroceryList() {
     const res = await fetch(`${API_URL}/grocery-list`, { headers: headers() });
     if (!res.ok) {

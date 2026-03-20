@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- 新增「周复盘」模块（计划闭环）
+- 新增周复盘接口：`GET /api/weekly-review`、`POST /api/weekly-review`
 - 新增 GitHub Actions：push 到 main 自动发布 Docker 镜像到 GHCR
 - 新增「成长报告中心」页面（ReportCenter）
 - 新增周报接口：`GET /api/reports/weekly?days=7|14|30`

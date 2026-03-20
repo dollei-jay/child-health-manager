@@ -102,6 +102,19 @@ async function startServer() {
         createdAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS weekly_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
+        weekStart TEXT,
+        summary TEXT,
+        blockers TEXT,
+        nextFocus TEXT,
+        score INTEGER,
+        updatedAt TEXT,
+        UNIQUE(userId, weekStart),
+        FOREIGN KEY(userId) REFERENCES users(id)
+      )`);
     }
   });
 
@@ -138,6 +151,16 @@ async function startServer() {
     } catch {
       return fallback;
     }
+  };
+
+  const toDateString = (date: Date) => date.toISOString().slice(0, 10);
+
+  const getWeekStartMonday = (base: Date = new Date()) => {
+    const d = startOfDay(base);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day; // Sunday->-6, Monday->0
+    d.setDate(d.getDate() + diff);
+    return d;
   };
 
   const countWeeklyPlanTasks = (planData: any[]) => {
@@ -420,6 +443,63 @@ async function startServer() {
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true });
+      }
+    );
+  });
+
+  // Weekly Review (计划闭环)
+  app.get('/api/weekly-review', authenticateToken, (req: any, res) => {
+    const weekStartRaw = String(req.query.weekStart || '').trim();
+    const fallbackWeekStart = toDateString(getWeekStartMonday(new Date()));
+    const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(weekStartRaw) ? weekStartRaw : fallbackWeekStart;
+
+    db.get(
+      `SELECT weekStart, summary, blockers, nextFocus, score, updatedAt FROM weekly_reviews WHERE userId = ? AND weekStart = ?`,
+      [req.user.id, weekStart],
+      (err, row: any) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) {
+          return res.json({
+            weekStart,
+            summary: '',
+            blockers: '',
+            nextFocus: '',
+            score: 80,
+            updatedAt: null
+          });
+        }
+        return res.json(row);
+      }
+    );
+  });
+
+  app.post('/api/weekly-review', authenticateToken, (req: any, res) => {
+    const { weekStart, summary = '', blockers = '', nextFocus = '', score = 80 } = req.body || {};
+
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(String(weekStart))) {
+      return res.status(400).json({ error: 'weekStart is required in YYYY-MM-DD format' });
+    }
+
+    const numericScore = Number(score);
+    if (Number.isNaN(numericScore) || numericScore < 0 || numericScore > 100) {
+      return res.status(400).json({ error: 'score must be a number between 0 and 100' });
+    }
+
+    const updatedAt = new Date().toISOString();
+
+    db.run(
+      `INSERT INTO weekly_reviews (userId, weekStart, summary, blockers, nextFocus, score, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, weekStart) DO UPDATE SET
+         summary = excluded.summary,
+         blockers = excluded.blockers,
+         nextFocus = excluded.nextFocus,
+         score = excluded.score,
+         updatedAt = excluded.updatedAt`,
+      [req.user.id, String(weekStart), String(summary), String(blockers), String(nextFocus), Math.round(numericScore), updatedAt],
+      function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        return res.json({ success: true, updatedAt });
       }
     );
   });

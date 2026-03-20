@@ -43,6 +43,21 @@
 前端入口：顶部导航「成长报告」
 后端接口：`GET /api/reports/weekly?days=7|14|30`
 
+
+## 2.6 计划闭环（周复盘）
+
+新增「周复盘」模块，形成计划闭环：
+
+- 以“周一”为起始维护周复盘记录
+- 记录本周执行总结 / 阻塞问题 / 下周焦点
+- 支持 0-100 分执行评分
+- 每周可反复编辑并保存（同一周自动覆盖更新）
+
+前端入口：顶部导航「周复盘」
+后端接口：
+- `GET /api/weekly-review?weekStart=YYYY-MM-DD`
+- `POST /api/weekly-review`
+
 ## 3. 技术栈
 
 - 前端：React + Vite + TypeScript + Tailwind

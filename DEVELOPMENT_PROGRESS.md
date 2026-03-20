@@ -32,3 +32,7 @@
 6. 新增 CI/CD 自动发版（Docker）
    - 新增 `.github/workflows/docker-publish.yml`
    - push 到 `main` 自动构建并发布到 GHCR
+
+7. 阶段3（计划闭环）首版已落地
+   - 新增周复盘页面（summary/blockers/nextFocus/score）
+   - 新增 weekly_reviews 数据表与读写 API
