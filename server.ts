@@ -64,6 +64,7 @@ async function startServer() {
     } else {
       console.log('Connected to the SQLite database at', dbPath);
       // Create tables
+      db.serialize(() => {
       db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE,
@@ -207,6 +208,7 @@ async function startServer() {
         updatedAt TEXT,
         UNIQUE(userId, childProfileId, reminderType, reminderHash)
       )`);
+      });
     }
   });
 

@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- 新增基础 API 冒烟测试脚本：`scripts/api-smoke-test.mjs`
+- 新增 npm 脚本：`npm run test:smoke`（需服务运行）
+- 实测覆盖链路：注册/登录/档案/待办/生长/提醒/周报
 - 报告中心新增 PDF 导出（浏览器打印版）
 - 支持将报告内容排版后直接打印/另存为 PDF
 - 新增 CSV 导出接口：`GET /api/export/csv?type=growth|todos`
