@@ -9,3 +9,30 @@
     display: none; /* Chrome, Safari and Opera */
   }
 }
+
+@layer components {
+  .theme-boy .text-pink-600,
+  .theme-boy .text-pink-500,
+  .theme-boy .text-rose-500,
+  .theme-boy .text-purple-500,
+  .theme-boy .text-purple-600 { color: #0ea5e9 !important; }
+
+  .theme-boy .bg-pink-50,
+  .theme-boy .bg-pink-50\/50,
+  .theme-boy .bg-pink-50\/60,
+  .theme-boy .bg-rose-50,
+  .theme-boy .bg-rose-50\/60,
+  .theme-boy .bg-purple-50,
+  .theme-boy .bg-pink-100,
+  .theme-boy .bg-rose-100,
+  .theme-boy .bg-purple-100 { background-color: #f0f9ff !important; }
+
+  .theme-boy .bg-pink-300 { background-color: #93c5fd !important; }
+
+  .theme-boy .border-pink-100,
+  .theme-boy .border-pink-200,
+  .theme-boy .border-rose-100,
+  .theme-boy .border-rose-200,
+  .theme-boy .border-purple-100,
+  .theme-boy .border-purple-200 { border-color: #dbeafe !important; }
+}

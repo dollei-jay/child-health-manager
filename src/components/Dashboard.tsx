@@ -6,6 +6,7 @@ import { getMonthDates } from '../utils';
 interface DashboardProps {
   childName?: string;
   childAvatar?: string;
+  isBoyTheme?: boolean;
 }
 
 interface Todo {
@@ -24,7 +25,7 @@ interface GrowthRecord {
   createdAt?: string;
 }
 
-export default function Dashboard({ childName, childAvatar }: DashboardProps) {
+export default function Dashboard({ childName, childAvatar, isBoyTheme = false }: DashboardProps) {
   const [loading, setLoading] = useState(true);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
@@ -155,18 +156,18 @@ export default function Dashboard({ childName, childAvatar }: DashboardProps) {
       <div className="bg-white rounded-3xl p-6 md:p-8 border border-pink-100 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600">
+            <h2 className={`text-2xl md:text-3xl font-extrabold tracking-tight text-transparent bg-clip-text ${isBoyTheme ? 'bg-gradient-to-r from-sky-500 to-cyan-500' : 'bg-gradient-to-r from-pink-600 to-purple-600'}`}>
               {childName ? `${childName} 的本周健康总览` : '本周健康总览'}
             </h2>
             <p className="mt-2 text-sm md:text-base text-stone-500 font-medium">
               先看关键数据，再进入各模块执行。
             </p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 shrink-0 overflow-hidden ring-2 ring-white/80">
+          <div className={`w-20 h-20 md:w-24 md:h-24 rounded-3xl text-white flex items-center justify-center shrink-0 overflow-hidden ring-4 ring-white/85 border ${isBoyTheme ? 'bg-gradient-to-br from-sky-300 to-cyan-400 border-sky-200 shadow-lg shadow-sky-200/60' : 'bg-gradient-to-br from-pink-400 to-rose-400 border-pink-200 shadow-lg shadow-pink-200/60'}`}>
             {childAvatar ? (
               <img src={childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
             ) : (
-              <span className="font-extrabold text-lg">{(childName || '宝').charAt(0)}</span>
+              <span className="font-extrabold text-3xl">{(childName || '宝').charAt(0)}</span>
             )}
           </div>
         </div>

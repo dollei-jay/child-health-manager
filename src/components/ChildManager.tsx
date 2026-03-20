@@ -231,7 +231,7 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
             <div key={child.id} className={`p-4 rounded-2xl border ${selected ? 'border-pink-200 bg-pink-50/50' : 'border-stone-200 bg-white'}`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden shrink-0">
                     {child.childAvatar ? (
                       <img src={child.childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
                     ) : (
@@ -384,7 +384,7 @@ function EditorCard({
       </div>
 
       <label className="flex items-center gap-3 px-3 py-2 border border-stone-200 rounded-xl bg-stone-50 cursor-pointer hover:bg-pink-50 transition-colors">
-        <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden">
+        <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 font-bold flex items-center justify-center overflow-hidden">
           {formAvatar ? <img src={formAvatar} alt="头像预览" className="w-full h-full object-cover" /> : '头像'}
         </div>
         <div className="text-xs text-stone-600 font-medium">上传孩子头像（可选）</div>

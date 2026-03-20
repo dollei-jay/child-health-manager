@@ -141,7 +141,7 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
                 />
               </div>
               <label className="flex items-center gap-3 px-3 py-2.5 border border-stone-200 rounded-xl bg-stone-50 cursor-pointer hover:bg-pink-50 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center overflow-hidden font-bold text-sm">
+                <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center overflow-hidden font-bold text-sm">
                   {childAvatar ? <img src={childAvatar} alt="头像预览" className="w-full h-full object-cover" /> : <ImagePlus size={16} />}
                 </div>
                 <div className="text-left">

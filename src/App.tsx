@@ -155,6 +155,7 @@ function App() {
   const selectedChild = children.find((c) => Number(c.id) === Number(userProfile?.selectedChildId));
   const childAvatar = selectedChild?.childAvatar || userProfile?.childAvatar || '';
   const childInitial = (userProfile?.childName || childMeta.selectedName || '宝').trim().charAt(0) || '宝';
+  const isBoyTheme = false;
 
   if (loading) {
     return (
@@ -173,7 +174,7 @@ function App() {
       case 'dashboard':
         return (
           <div className="max-w-5xl mx-auto space-y-8">
-            <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} />
+            <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} isBoyTheme={isBoyTheme} />
             <Principles />
             <Stats showCalendar={false} />
             <WeeklyReview />
@@ -184,12 +185,12 @@ function App() {
       case 'grocery': return <GroceryList />;
       case 'todos': return <Todos />;
       case 'reminders': return <ReminderCenter onGotoTab={setActiveTab} />;
-      default: return <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} />;
+      default: return <Dashboard childName={userProfile?.childName} childAvatar={childAvatar} isBoyTheme={isBoyTheme} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 text-stone-800 font-sans selection:bg-pink-200 pb-12">
+    <div className={`min-h-screen text-stone-800 font-sans pb-12 ${isBoyTheme ? 'theme-boy bg-gradient-to-br from-sky-50 via-cyan-50 to-blue-50 selection:bg-blue-100' : 'theme-girl bg-gradient-to-br from-rose-50 via-pink-50 to-purple-50 selection:bg-pink-200'}`}>
       {/* Header */}
       <header className="bg-white/60 backdrop-blur-xl border-b border-pink-100 sticky top-0 z-10 print:hidden shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -197,7 +198,7 @@ function App() {
             {/* Top row on mobile: Title + Actions */}
             <div className="flex items-center justify-between gap-4 min-w-0">
               <div className="flex items-center gap-3 shrink-0 min-w-0">
-                <div className="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 font-extrabold text-base overflow-hidden">
+                <div className="w-12 h-12 shrink-0 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-400 text-white flex items-center justify-center shadow-md shadow-pink-200 font-extrabold text-lg overflow-hidden">
                   {childAvatar ? (
                     <img src={childAvatar} alt="孩子头像" className="w-full h-full object-cover" />
                   ) : (
@@ -205,11 +206,11 @@ function App() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600 leading-tight truncate">
+                  <h1 className={`text-lg sm:text-xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r leading-tight truncate ${isBoyTheme ? 'from-sky-500 to-cyan-500' : 'from-pink-600 to-purple-600'}`}>
                     {userProfile?.childName ? `${userProfile.childName}的成长管理` : '宝贝成长管理'}
                   </h1>
                   <p className="mt-0.5 text-xs font-medium text-stone-500 flex items-center gap-1.5 truncate">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${isBoyTheme ? 'bg-sky-400' : 'bg-pink-400'}`}></span>
                     <span className="truncate">{getSubtitle()}</span>
                   </p>
 
@@ -283,16 +284,16 @@ function App() {
                     label="一周计划" 
                   />
                   <TabButton 
-                    active={activeTab === 'grocery'} 
-                    onClick={() => setActiveTab('grocery')} 
-                    icon={<ShoppingCart size={16} />} 
-                    label="采购清单" 
-                  />
-                  <TabButton 
                     active={activeTab === 'todos'} 
                     onClick={() => setActiveTab('todos')} 
                     icon={<ListTodo size={16} />} 
                     label="备忘待办" 
+                  />
+                  <TabButton 
+                    active={activeTab === 'grocery'} 
+                    onClick={() => setActiveTab('grocery')} 
+                    icon={<ShoppingCart size={16} />} 
+                    label="采购清单" 
                   />
                 </nav>
               </div>
