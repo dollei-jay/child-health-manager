@@ -134,6 +134,16 @@ async function startServer() {
         UNIQUE(userId, weekStart),
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
+        action TEXT,
+        status TEXT,
+        ip TEXT,
+        detail TEXT,
+        createdAt TEXT
+      )`);
     }
   });
 
@@ -247,6 +257,17 @@ async function startServer() {
 
   const isValidDateString = (value: any) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
+  const logAudit = (dbConn: any, payload: { userId?: number | null; action: string; status: 'success' | 'fail'; ip?: string; detail?: string }) => {
+    const { userId = null, action, status, ip = '', detail = '' } = payload;
+    const createdAt = new Date().toISOString();
+
+    dbConn.run(
+      `INSERT INTO audit_logs (userId, action, status, ip, detail, createdAt) VALUES (?, ?, ?, ?, ?, ?)`,
+      [userId, action, status, String(ip).slice(0, 120), String(detail).slice(0, 400), createdAt],
+      () => {}
+    );
+  };
+
   const normalizeText = (value: any, max = 300) => {
     const text = String(value ?? '').trim();
     return text.slice(0, max);
@@ -328,24 +349,30 @@ async function startServer() {
     const loginKey = makeLoginKey(req, normalizedEmail);
     const limitCheck = checkLoginRateLimit(loginKey);
     if (limitCheck.blocked) {
+      const ip = getClientIp(req);
+      logAudit(db, { action: 'login', status: 'fail', ip, detail: `email=${normalizedEmail}; reason=rate_limited; retryAfter=${limitCheck.retryAfterSec}s` });
       res.setHeader('Retry-After', String(limitCheck.retryAfterSec));
       return res.status(429).json({ error: `Too many login attempts. Retry in ${limitCheck.retryAfterSec}s.` });
     }
 
     db.get(`SELECT * FROM users WHERE email = ?`, [normalizedEmail], async (err, user: any) => {
+      const ip = getClientIp(req);
       if (err) return res.status(500).json({ error: err.message });
       if (!user) {
         recordLoginFailure(loginKey);
+        logAudit(db, { action: 'login', status: 'fail', ip, detail: `email=${normalizedEmail}; reason=user_not_found` });
         return res.status(400).json({ error: 'Invalid email or password' });
       }
 
       const validPassword = await bcrypt.compare(normalizedPassword, user.password);
       if (!validPassword) {
         recordLoginFailure(loginKey);
+        logAudit(db, { userId: user.id, action: 'login', status: 'fail', ip, detail: `email=${normalizedEmail}; reason=bad_password` });
         return res.status(400).json({ error: 'Invalid email or password' });
       }
 
       clearLoginFailures(loginKey);
+      logAudit(db, { userId: user.id, action: 'login', status: 'success', ip, detail: `email=${normalizedEmail}` });
 
       const tokenPayload = { id: user.id, email: user.email };
       const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
@@ -380,6 +407,7 @@ async function startServer() {
       ],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
+        logAudit(db, { userId: req.user.id, action: 'profile_update', status: 'success', ip: getClientIp(req), detail: 'profile fields updated' });
         res.json({ success: true });
       }
     );
@@ -417,6 +445,7 @@ async function startServer() {
       [req.user.id, normalizedText, normalizedPriority, normalizedDueDate, createdAt],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
+        logAudit(db, { userId: req.user.id, action: 'todo_create', status: 'success', ip: getClientIp(req), detail: `todoId=${this.lastID}` });
         res.json({ id: this.lastID, text: normalizedText, completed: false, priority: normalizedPriority, dueDate: normalizedDueDate, createdAt });
       }
     );
@@ -478,6 +507,7 @@ async function startServer() {
       [req.params.id, req.user.id],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
+        logAudit(db, { userId: req.user.id, action: 'todo_delete', status: 'success', ip: getClientIp(req), detail: `todoId=${req.params.id}` });
         res.json({ success: true });
       }
     );
@@ -603,6 +633,7 @@ async function startServer() {
       [req.user.id, date, Number(h.toFixed(1)), Number(w.toFixed(1)), Number(b.toFixed(1)).toFixed(1), createdAt],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
+        logAudit(db, { userId: req.user.id, action: 'growth_record_create', status: 'success', ip: getClientIp(req), detail: `recordId=${this.lastID}; date=${date}` });
         res.json({ id: this.lastID, date, height: Number(h.toFixed(1)), weight: Number(w.toFixed(1)), bmi: Number(b.toFixed(1)).toFixed(1), createdAt });
       }
     );
@@ -614,6 +645,7 @@ async function startServer() {
       [req.params.id, req.user.id],
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
+        logAudit(db, { userId: req.user.id, action: 'growth_record_delete', status: 'success', ip: getClientIp(req), detail: `recordId=${req.params.id}` });
         res.json({ success: true });
       }
     );
@@ -672,6 +704,21 @@ async function startServer() {
       function (err) {
         if (err) return res.status(500).json({ error: err.message });
         return res.json({ success: true, updatedAt });
+      }
+    );
+  });
+
+  // Audit Logs (basic)
+  app.get('/api/audit-logs', authenticateToken, (req: any, res) => {
+    const limitRaw = Number(req.query.limit || 50);
+    const limit = Number.isNaN(limitRaw) ? 50 : Math.min(200, Math.max(1, limitRaw));
+
+    db.all(
+      `SELECT id, action, status, ip, detail, createdAt FROM audit_logs WHERE userId = ? ORDER BY id DESC LIMIT ?`,
+      [req.user.id, limit],
+      (err, rows: any[]) => {
+        if (err) return res.status(500).json({ error: err.message });
+        return res.json({ items: rows || [] });
       }
     );
   });
