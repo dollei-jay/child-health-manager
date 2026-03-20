@@ -38,6 +38,7 @@ function App() {
   const [children, setChildren] = useState<Array<{ id: number; childName: string; childAvatar?: string }>>([]);
   const [reminderCount, setReminderCount] = useState(0);
   const [contextVersion, setContextVersion] = useState(0);
+  const [isSwitchingChild, setIsSwitchingChild] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -100,19 +101,31 @@ function App() {
   };
 
   const handleQuickSwitchChild = async () => {
-    if (children.length <= 1) return;
+    if (children.length <= 1 || isSwitchingChild) return;
     const selectedId = Number(userProfile?.selectedChildId);
     const currentIndex = children.findIndex((c) => c.id === selectedId);
     const next = children[(currentIndex + 1 + children.length) % children.length];
     if (!next) return;
 
+    setIsSwitchingChild(true);
     try {
+      setUserProfile((prev) => prev ? {
+        ...prev,
+        selectedChildId: next.id,
+        childName: next.childName || prev.childName,
+        childAvatar: next.childAvatar || prev.childAvatar
+      } : prev);
+      setChildMeta((prev) => ({ ...prev, selectedName: next.childName || prev.selectedName }));
+
       await api.selectChild(next.id);
       await fetchAndSetProfile();
       setActiveTab('dashboard');
       setContextVersion((v) => v + 1);
     } catch (err) {
       console.error('Failed to quick switch child', err);
+      await fetchAndSetProfile();
+    } finally {
+      setIsSwitchingChild(false);
     }
   };
 
@@ -229,10 +242,11 @@ function App() {
                 {children.length > 1 && (
                   <button
                     onClick={handleQuickSwitchChild}
-                    className="p-2 text-stone-500 hover:text-pink-500 hover:bg-pink-50 rounded-xl transition-colors"
+                    disabled={isSwitchingChild}
+                    className={`p-2 rounded-xl transition-colors ${isSwitchingChild ? 'text-stone-300 cursor-not-allowed' : 'text-stone-500 hover:text-pink-500 hover:bg-pink-50'}`}
                     title={`快速切换孩子（当前：${childMeta.selectedName || userProfile?.childName || '未选择'}）`}
                   >
-                    <Repeat size={20} />
+                    <Repeat size={20} className={isSwitchingChild ? 'animate-spin' : ''} />
                   </button>
                 )}
                 <button
@@ -256,12 +270,12 @@ function App() {
             <div className="flex items-center gap-3 min-w-0 lg:flex-1 lg:justify-end">
               <button
                 onClick={handleQuickSwitchChild}
-                disabled={children.length <= 1}
-                className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl transition-colors whitespace-nowrap ${children.length > 1 ? 'text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100' : 'text-stone-400 bg-stone-50 border border-stone-200 cursor-not-allowed'}`}
+                disabled={children.length <= 1 || isSwitchingChild}
+                className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold rounded-xl transition-colors whitespace-nowrap ${children.length > 1 && !isSwitchingChild ? 'text-pink-600 bg-pink-50 border border-pink-200 hover:bg-pink-100' : 'text-stone-400 bg-stone-50 border border-stone-200 cursor-not-allowed'}`}
                 title={children.length > 1 ? `快速切换孩子（当前：${childMeta.selectedName || userProfile?.childName || '未选择'}）` : '暂无可切换孩子'}
               >
-                <Repeat size={16} />
-                <span>切换孩子</span>
+                <Repeat size={16} className={isSwitchingChild ? 'animate-spin' : ''} />
+                <span>{isSwitchingChild ? '切换中...' : '切换孩子'}</span>
               </button>
               <div className="w-full overflow-x-auto hide-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 lg:w-auto">
                 <nav className="flex p-1.5 bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-pink-100 w-max lg:w-full lg:flex-wrap lg:justify-end mx-auto lg:mx-0">
@@ -332,7 +346,7 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
         <Suspense fallback={<div className="animate-pulse text-center py-10 text-stone-400">模块加载中...</div>}>
           <div key={contextVersion}>{renderContent()}</div>
         </Suspense>
@@ -353,7 +367,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-300 shrink-0 ${
+      className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-300 shrink-0 ${
         active
           ? 'bg-white text-pink-600 shadow-sm border border-pink-100 scale-100'
           : 'text-stone-500 hover:bg-pink-50/50 hover:text-pink-500 scale-95 hover:scale-100 border border-transparent'

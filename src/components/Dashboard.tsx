@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, Calendar, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import { api } from '../api';
 import { getMonthDates } from '../utils';
+import PageSection from './PageSection';
 
 interface DashboardProps {
   childName?: string;
@@ -205,8 +206,7 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="bg-white rounded-3xl p-6 border border-stone-100 shadow-sm">
-          <h3 className="text-lg font-extrabold text-stone-800 mb-4">优先待办（Top 5）</h3>
+        <PageSection title="优先待办（Top 5)">
           {pendingTodos.length === 0 ? (
             <p className="text-stone-400 text-sm">暂无待办，状态很好，建议转到「一周计划」补充下一阶段安排。</p>
           ) : (
@@ -219,14 +219,11 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
               ))}
             </ul>
           )}
-        </section>
+        </PageSection>
 
-        <section className="bg-white rounded-3xl p-5 border border-stone-100 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-extrabold text-stone-800 flex items-center gap-2">
-              <Calendar size={18} className="text-pink-500" />
-              打卡日历
-            </h3>
+        <PageSection
+          title="打卡日历"
+          right={(
             <div className="flex items-center gap-1 bg-stone-50 border border-stone-100 rounded-xl p-1">
               <button onClick={prevMonth} className="p-1.5 rounded-lg text-stone-500 hover:bg-white hover:shadow-sm transition-all">
                 <ChevronLeft size={14} />
@@ -236,8 +233,9 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
                 <ChevronRight size={14} />
               </button>
             </div>
-          </div>
-
+          )}
+          className="p-5"
+        >
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className="rounded-xl border border-pink-100 bg-pink-50 px-3 py-2">
               <p className="text-[11px] text-pink-500 font-bold">本月打卡完成</p>
@@ -280,7 +278,7 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
             <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pink-400"></span>多数完成</span>
             <span className="inline-flex items-center gap-1"><Star size={10} className="text-rose-500" />完美达成</span>
           </div>
-        </section>
+        </PageSection>
       </div>
     </div>
   );
