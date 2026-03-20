@@ -1369,6 +1369,57 @@ async function startServer() {
     }
   });
 
+  // CSV Export
+  app.get('/api/export/csv', authenticateToken, async (req: any, res) => {
+    const type = String(req.query.type || '').trim();
+    if (!['growth', 'todos'].includes(type)) {
+      return res.status(400).json({ error: 'type must be growth or todos' });
+    }
+
+    const esc = (value: any) => {
+      const str = String(value ?? '');
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      if (type === 'growth') {
+        db.all(
+          `SELECT date, height, weight, bmi, createdAt FROM growth_records WHERE userId = ? AND childProfileId = ? ORDER BY date DESC`,
+          [req.user.id, selectedChildId],
+          (err, rows: any[]) => {
+            if (err) return res.status(500).json({ error: err.message });
+            const header = ['date', 'height_cm', 'weight_kg', 'bmi', 'created_at'];
+            const lines = (rows || []).map((r) => [esc(r.date), esc(r.height), esc(r.weight), esc(r.bmi), esc(r.createdAt)].join(','));
+            const csv = [header.join(','), ...lines].join('\n');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="growth-records-${toDateString(new Date())}.csv"`);
+            return res.send(csv);
+          }
+        );
+        return;
+      }
+
+      db.all(
+        `SELECT text, completed, priority, dueDate, createdAt FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC`,
+        [req.user.id, selectedChildId],
+        (err, rows: any[]) => {
+          if (err) return res.status(500).json({ error: err.message });
+          const header = ['text', 'completed', 'priority', 'due_date', 'created_at'];
+          const lines = (rows || []).map((r) => [esc(r.text), esc(r.completed ? '1' : '0'), esc(r.priority), esc(r.dueDate), esc(r.createdAt)].join(','));
+          const csv = [header.join(','), ...lines].join('\n');
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader('Content-Disposition', `attachment; filename="todos-${toDateString(new Date())}.csv"`);
+          return res.send(csv);
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to export csv' });
+    }
+  });
+
   // Weekly Report
   app.get('/api/reports/weekly', authenticateToken, (req: any, res) => {
     const daysRaw = Number(req.query.days || 7);

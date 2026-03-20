@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FileText, Download, CalendarRange, Sparkles } from 'lucide-react';
+import { FileText, Download, CalendarRange, Sparkles, Table } from 'lucide-react';
 import { api } from '../api';
 
 interface WeeklyReport {
@@ -93,6 +93,20 @@ export default function ReportCenter() {
     URL.revokeObjectURL(url);
   };
 
+  const exportCsv = async (type: 'growth' | 'todos') => {
+    try {
+      const blob = await api.exportCsv(type);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${type}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message || 'CSV 导出失败');
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="bg-white rounded-3xl p-6 border border-pink-100 shadow-sm">
@@ -137,6 +151,20 @@ export default function ReportCenter() {
             className="h-[42px] px-4 bg-white border border-pink-200 text-pink-600 rounded-xl font-bold text-sm hover:bg-pink-50 transition-colors disabled:opacity-50"
           >
             <span className="inline-flex items-center gap-1.5"><Download size={16} /> 导出 Markdown</span>
+          </button>
+
+          <button
+            onClick={() => exportCsv('growth')}
+            className="h-[42px] px-4 bg-white border border-stone-200 text-stone-600 rounded-xl font-bold text-sm hover:bg-stone-50 transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5"><Table size={16} /> 导出生长CSV</span>
+          </button>
+
+          <button
+            onClick={() => exportCsv('todos')}
+            className="h-[42px] px-4 bg-white border border-stone-200 text-stone-600 rounded-xl font-bold text-sm hover:bg-stone-50 transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5"><Table size={16} /> 导出待办CSV</span>
           </button>
         </div>
 

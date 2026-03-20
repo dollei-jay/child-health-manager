@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- 新增 CSV 导出接口：`GET /api/export/csv?type=growth|todos`
+- 报告中心新增一键导出：生长记录 CSV / 待办 CSV
+- 新增 cron 主动提醒：每日 09:00（早间提醒）与 21:00（晚间复盘提醒），时区 `Asia/Shanghai`
+- 提醒将自动发送至董事长会话（boss）
 - 新增提醒摘要接口：`GET /api/reminders/digest`（用于计划推送）
 - 重构提醒聚合逻辑为可复用函数，支持站内与推送复用同一规则
 - 新增提醒状态管理：已读 / 静默（snooze）

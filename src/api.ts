@@ -310,6 +310,15 @@ export const api = {
     return res.json();
   },
 
+  async exportCsv(type: 'growth' | 'todos') {
+    const res = await fetch(`${API_URL}/export/csv?type=${encodeURIComponent(type)}`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to export csv');
+    }
+    return res.blob();
+  },
+
   async markReminderRead(type: string, hash: string) {
     const res = await fetch(`${API_URL}/reminders/${encodeURIComponent(type)}/${encodeURIComponent(hash)}/read`, {
       method: 'POST',
