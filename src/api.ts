@@ -210,6 +210,19 @@ export const api = {
     return res.json();
   },
 
+  async deleteChild(id: number, targetChildId?: number) {
+    const res = await fetch(`${API_URL}/children/${id}`, {
+      method: 'DELETE',
+      headers: headers(),
+      body: JSON.stringify({ targetChildId })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to delete child');
+    }
+    return res.json();
+  },
+
   async saveWeeklyReview(data: { weekStart: string; summary: string; blockers: string; nextFocus: string; score: number }) {
     const res = await fetch(`${API_URL}/weekly-review`, {
       method: 'POST',

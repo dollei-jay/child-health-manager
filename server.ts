@@ -560,6 +560,80 @@ async function startServer() {
     });
   });
 
+  app.delete('/api/children/:id', authenticateToken, (req: any, res) => {
+    const deleteChildId = Number(req.params.id);
+    const targetChildId = req.body?.targetChildId ? Number(req.body.targetChildId) : null;
+
+    if (Number.isNaN(deleteChildId) || deleteChildId <= 0) {
+      return res.status(400).json({ error: 'invalid child id' });
+    }
+
+    db.all(`SELECT id FROM child_profiles WHERE userId = ? ORDER BY id ASC`, [req.user.id], (listErr: any, rows: any[]) => {
+      if (listErr) return res.status(500).json({ error: listErr.message });
+
+      const ids = (rows || []).map((r) => Number(r.id)).filter((n) => !Number.isNaN(n));
+      if (!ids.includes(deleteChildId)) return res.status(404).json({ error: 'child profile not found' });
+      if (ids.length <= 1) return res.status(400).json({ error: 'Cannot delete the only child profile' });
+
+      let targetId = targetChildId;
+      if (!targetId || Number.isNaN(targetId) || targetId <= 0 || targetId === deleteChildId || !ids.includes(targetId)) {
+        targetId = ids.find((id) => id !== deleteChildId) || null;
+      }
+
+      if (!targetId) return res.status(400).json({ error: 'No valid target child profile for migration' });
+
+      const now = new Date().toISOString();
+
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+
+        const finalize = (err?: any) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: err.message || String(err) });
+          }
+          db.run('COMMIT', (commitErr: any) => {
+            if (commitErr) {
+              db.run('ROLLBACK');
+              return res.status(500).json({ error: commitErr.message });
+            }
+            logAudit(db, {
+              userId: req.user.id,
+              action: 'child_delete',
+              status: 'success',
+              ip: getClientIp(req),
+              detail: `deleteChildId=${deleteChildId}; targetChildId=${targetId}`
+            });
+            return res.json({ success: true, migratedTo: targetId, deletedChildId: deleteChildId, updatedAt: now });
+          });
+        };
+
+        db.run(`UPDATE todos SET childProfileId = ? WHERE userId = ? AND childProfileId = ?`, [targetId, req.user.id, deleteChildId], (e1: any) => {
+          if (e1) return finalize(e1);
+          db.run(`UPDATE weekly_plan SET childProfileId = ? WHERE userId = ? AND childProfileId = ?`, [targetId, req.user.id, deleteChildId], (e2: any) => {
+            if (e2) return finalize(e2);
+            db.run(`UPDATE checklist SET childProfileId = ? WHERE userId = ? AND childProfileId = ?`, [targetId, req.user.id, deleteChildId], (e3: any) => {
+              if (e3) return finalize(e3);
+              db.run(`UPDATE grocery_list SET childProfileId = ? WHERE userId = ? AND childProfileId = ?`, [targetId, req.user.id, deleteChildId], (e4: any) => {
+                if (e4) return finalize(e4);
+                db.run(`UPDATE growth_records SET childProfileId = ? WHERE userId = ? AND childProfileId = ?`, [targetId, req.user.id, deleteChildId], (e5: any) => {
+                  if (e5) return finalize(e5);
+                  db.run(`DELETE FROM child_profiles WHERE id = ? AND userId = ?`, [deleteChildId, req.user.id], (e6: any) => {
+                    if (e6) return finalize(e6);
+                    db.run(`UPDATE users SET selectedChildId = ? WHERE id = ? AND selectedChildId = ?`, [targetId, req.user.id, deleteChildId], (e7: any) => {
+                      if (e7) return finalize(e7);
+                      return finalize();
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+
   // Backward-compatible Profile API (returns selected child)
   app.get('/api/profile', authenticateToken, async (req: any, res) => {
     try {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Users, Save, X, Pencil } from 'lucide-react';
+import { Plus, Users, Save, X, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 
 interface ChildProfile {
@@ -22,6 +22,8 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [deletingChildId, setDeletingChildId] = useState<number | null>(null);
+  const [migrationTargetId, setMigrationTargetId] = useState<number | null>(null);
 
   const [formName, setFormName] = useState('');
   const [formBirthDate, setFormBirthDate] = useState('');
@@ -100,6 +102,29 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
   const cancelEdit = () => {
     setEditingId(null);
     resetForm();
+  };
+
+  const startDelete = (childId: number) => {
+    const candidates = children.filter((c) => c.id !== childId);
+    setDeletingChildId(childId);
+    setMigrationTargetId(candidates.length ? candidates[0].id : null);
+  };
+
+  const cancelDelete = () => {
+    setDeletingChildId(null);
+    setMigrationTargetId(null);
+  };
+
+  const submitDelete = async () => {
+    if (!deletingChildId) return;
+    try {
+      await api.deleteChild(deletingChildId, migrationTargetId || undefined);
+      cancelDelete();
+      await fetchChildren();
+      if (onSelectedChange) await onSelectedChange(migrationTargetId || deletingChildId);
+    } catch (err) {
+      console.error('failed to delete child', err);
+    }
   };
 
   if (loading) {
@@ -198,11 +223,51 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
                   >
                     <Pencil size={15} />
                   </button>
+                  {children.length > 1 && (
+                    <button
+                      onClick={() => startDelete(child.id)}
+                      className="p-2 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg"
+                      title="删除"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
+
+        {deletingChildId && (
+          <div className="p-4 rounded-2xl border border-rose-200 bg-rose-50/60 space-y-3">
+            <p className="text-sm font-bold text-rose-700 inline-flex items-center gap-2">
+              <AlertTriangle size={16} /> 删除孩子档案（数据迁移）
+            </p>
+            <p className="text-xs text-rose-600">将把该孩子关联的待办/计划/清单/生长记录迁移到目标孩子，然后删除该档案。</p>
+
+            <label className="text-xs font-medium text-stone-600 block">
+              迁移目标
+              <select
+                value={migrationTargetId || ''}
+                onChange={(e) => setMigrationTargetId(Number(e.target.value))}
+                className="mt-1 w-full px-3 py-2 bg-white border border-rose-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-300"
+              >
+                {children
+                  .filter((c) => c.id !== deletingChildId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.childName}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
+            <div className="flex items-center gap-2">
+              <button onClick={submitDelete} className="px-3 py-2 text-xs font-bold rounded-lg bg-rose-500 text-white hover:bg-rose-600">确认删除并迁移</button>
+              <button onClick={cancelDelete} className="px-3 py-2 text-xs font-bold rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">取消</button>
+            </div>
+          </div>
+        )}
 
         {children.length === 0 && (
           <div className="text-sm text-stone-500 py-5 text-center border border-dashed border-stone-200 rounded-2xl bg-stone-50">
