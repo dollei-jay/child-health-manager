@@ -32,7 +32,24 @@ export default function ProfileSettings({ isOpen, onClose, userProfile, onProfil
   const handleAvatarSelect = (file?: File) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setChildAvatar(String(reader.result || '').slice(0, 250000));
+    reader.onload = () => {
+      const src = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 256;
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const w = Math.max(1, Math.round(img.width * ratio));
+        const h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        setChildAvatar(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = src;
+    };
     reader.readAsDataURL(file);
   };
 

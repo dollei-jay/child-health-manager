@@ -56,7 +56,22 @@ export default function ChildManager({ selectedChildId, onSelectedChange }: Chil
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      setFormAvatar(String(reader.result || '').slice(0, 250000));
+      const src = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 256;
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const w = Math.max(1, Math.round(img.width * ratio));
+        const h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        setFormAvatar(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = src;
     };
     reader.readAsDataURL(file);
   };

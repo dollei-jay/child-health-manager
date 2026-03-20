@@ -44,8 +44,7 @@ function App() {
       const token = getToken();
       if (token) {
         try {
-          const profile = await api.getProfile();
-          setUserProfile(profile);
+          await fetchAndSetProfile();
           setIsAuthenticated(true);
         } catch (err) {
           console.error('Failed to fetch profile', err);

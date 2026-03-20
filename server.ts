@@ -46,7 +46,7 @@ async function startServer() {
   }
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '8mb' }));
   fs.appendFileSync('trace.log', 'Middleware added.\n');
 
   // Initialize SQLite Database
@@ -93,6 +93,8 @@ async function startServer() {
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
 
+      db.run(`ALTER TABLE child_profiles ADD COLUMN childAvatar TEXT`, () => {});
+
       // migrate legacy single-child data into child_profiles
       db.run(
         `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, childAvatar, createdAt, updatedAt)
@@ -122,8 +124,6 @@ async function startServer() {
         createdAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
-
-      db.run(`ALTER TABLE child_profiles ADD COLUMN childAvatar TEXT`, () => {});
 
       db.run(`ALTER TABLE todos ADD COLUMN childProfileId INTEGER`, () => {});
 
@@ -352,7 +352,7 @@ async function startServer() {
     const raw = String(value ?? '').trim();
     if (!raw) return '';
     if (!raw.startsWith('data:image/')) return '';
-    return raw.slice(0, 250000);
+    return raw.slice(0, 2_000_000);
   };
 
   const buildReminderHash = (type: string, detail: string) => {
