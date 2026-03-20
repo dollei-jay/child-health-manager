@@ -72,12 +72,46 @@ async function startServer() {
         childBirthDate TEXT,
         childGender TEXT,
         childGoal TEXT,
+        selectedChildId INTEGER,
         createdAt TEXT
       )`);
+
+      db.run(`ALTER TABLE users ADD COLUMN selectedChildId INTEGER`, () => {});
+
+      db.run(`CREATE TABLE IF NOT EXISTS child_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
+        childName TEXT,
+        childBirthDate TEXT,
+        childGender TEXT,
+        childGoal TEXT,
+        createdAt TEXT,
+        updatedAt TEXT,
+        FOREIGN KEY(userId) REFERENCES users(id)
+      )`);
+
+      // migrate legacy single-child data into child_profiles
+      db.run(
+        `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
+         SELECT u.id, u.childName, u.childBirthDate, u.childGender, u.childGoal, COALESCE(u.createdAt, datetime('now')), datetime('now')
+         FROM users u
+         WHERE u.childName IS NOT NULL
+           AND TRIM(u.childName) <> ''
+           AND NOT EXISTS (SELECT 1 FROM child_profiles c WHERE c.userId = u.id)`
+      );
+
+      db.run(
+        `UPDATE users
+         SET selectedChildId = (
+           SELECT c.id FROM child_profiles c WHERE c.userId = users.id ORDER BY c.id ASC LIMIT 1
+         )
+         WHERE selectedChildId IS NULL`
+      );
 
       db.run(`CREATE TABLE IF NOT EXISTS todos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId INTEGER,
+        childProfileId INTEGER,
         text TEXT,
         completed INTEGER DEFAULT 0,
         priority TEXT DEFAULT 'medium',
@@ -86,34 +120,49 @@ async function startServer() {
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
 
+      db.run(`ALTER TABLE todos ADD COLUMN childProfileId INTEGER`, () => {});
+
       // Backward-compatible migration for existing databases
       db.run(`ALTER TABLE todos ADD COLUMN priority TEXT DEFAULT 'medium'`, () => {});
       db.run(`ALTER TABLE todos ADD COLUMN dueDate TEXT`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS weekly_plan (
-        userId INTEGER UNIQUE,
+        userId INTEGER,
+        childProfileId INTEGER,
         planData TEXT,
         updatedAt TEXT,
+        UNIQUE(userId, childProfileId),
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`ALTER TABLE weekly_plan ADD COLUMN childProfileId INTEGER`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS checklist (
-        userId INTEGER UNIQUE,
+        userId INTEGER,
+        childProfileId INTEGER,
         checkedItems TEXT,
         updatedAt TEXT,
+        UNIQUE(userId, childProfileId),
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
 
+      db.run(`ALTER TABLE checklist ADD COLUMN childProfileId INTEGER`, () => {});
+
       db.run(`CREATE TABLE IF NOT EXISTS grocery_list (
-        userId INTEGER UNIQUE,
+        userId INTEGER,
+        childProfileId INTEGER,
         listData TEXT,
         updatedAt TEXT,
+        UNIQUE(userId, childProfileId),
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`ALTER TABLE grocery_list ADD COLUMN childProfileId INTEGER`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS growth_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId INTEGER,
+        childProfileId INTEGER,
         date TEXT,
         height REAL,
         weight REAL,
@@ -121,6 +170,8 @@ async function startServer() {
         createdAt TEXT,
         FOREIGN KEY(userId) REFERENCES users(id)
       )`);
+
+      db.run(`ALTER TABLE growth_records ADD COLUMN childProfileId INTEGER`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS weekly_reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,6 +330,26 @@ async function startServer() {
     return isValidDateString(dateStr) ? dateStr : null;
   };
 
+  const getSelectedChildId = (userId: number): Promise<number | null> => {
+    return new Promise((resolve, reject) => {
+      db.get(`SELECT selectedChildId FROM users WHERE id = ?`, [userId], (err: any, userRow: any) => {
+        if (err) return reject(err);
+
+        const selected = Number(userRow?.selectedChildId);
+        if (!Number.isNaN(selected) && selected > 0) return resolve(selected);
+
+        db.get(`SELECT id FROM child_profiles WHERE userId = ? ORDER BY id ASC LIMIT 1`, [userId], (childErr: any, childRow: any) => {
+          if (childErr) return reject(childErr);
+          if (!childRow?.id) return resolve(null);
+
+          db.run(`UPDATE users SET selectedChildId = ? WHERE id = ?`, [childRow.id, userId], () => {
+            resolve(Number(childRow.id));
+          });
+        });
+      });
+    });
+  };
+
   // --- API ROUTES ---
 
   // Register
@@ -325,10 +396,35 @@ async function startServer() {
             }
             return res.status(500).json({ error: err.message });
           }
-          
-          const user = { id: this.lastID, email: normalizedEmail };
-          const token = jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
-          res.json({ token, user });
+
+          const userId = Number(this.lastID);
+          const initialChildName = normalizeText(childName, 50);
+
+          const finishLogin = () => {
+            const user = { id: userId, email: normalizedEmail };
+            const token = jwt.sign(user, JWT_SECRET, { expiresIn: '7d' });
+            res.json({ token, user });
+          };
+
+          if (!initialChildName) {
+            return finishLogin();
+          }
+
+          db.run(
+            `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [userId, initialChildName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), createdAt, createdAt],
+            function (childErr) {
+              if (!childErr && this?.lastID) {
+                db.run(`UPDATE users SET selectedChildId = ? WHERE id = ?`, [this.lastID, userId], () => {
+                  finishLogin();
+                });
+                return;
+              }
+              // fallback: even if child profile insert fails, allow login
+              finishLogin();
+            }
+          );
         }
       );
     } catch (err) {
@@ -380,54 +476,200 @@ async function startServer() {
     });
   });
 
-  // Get Profile
-  app.get('/api/profile', authenticateToken, (req: any, res) => {
-    db.get(`SELECT id, email, childName, childBirthDate, childGender, childGoal, createdAt FROM users WHERE id = ?`, [req.user.id], (err, user) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!user) return res.status(404).json({ error: 'User not found' });
-      res.json(user);
-    });
-  });
-
-  // Update Profile
-  app.put('/api/profile', authenticateToken, (req: any, res) => {
-    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
-
-    const normalizedGender = childGender === 'boy' ? 'boy' : 'girl';
-    const normalizedBirthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
-
-    db.run(
-      `UPDATE users SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ? WHERE id = ?`,
-      [
-        normalizeText(childName, 50),
-        normalizedBirthDate,
-        normalizedGender,
-        normalizeText(childGoal, 120),
-        req.user.id
-      ],
-      function (err) {
+  // Child Profiles
+  app.get('/api/children', authenticateToken, (req: any, res) => {
+    db.all(
+      `SELECT id, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt
+       FROM child_profiles WHERE userId = ? ORDER BY id ASC`,
+      [req.user.id],
+      (err, rows: any[]) => {
         if (err) return res.status(500).json({ error: err.message });
-        logAudit(db, { userId: req.user.id, action: 'profile_update', status: 'success', ip: getClientIp(req), detail: 'profile fields updated' });
-        res.json({ success: true });
+
+        db.get(`SELECT selectedChildId FROM users WHERE id = ?`, [req.user.id], (userErr: any, userRow: any) => {
+          if (userErr) return res.status(500).json({ error: userErr.message });
+          return res.json({ items: rows || [], selectedChildId: userRow?.selectedChildId || null });
+        });
       }
     );
   });
 
-  // Get Todos
-  app.get('/api/todos', authenticateToken, (req: any, res) => {
-    db.all(`SELECT * FROM todos WHERE userId = ? ORDER BY createdAt DESC`, [req.user.id], (err, rows) => {
+  app.post('/api/children', authenticateToken, (req: any, res) => {
+    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const name = normalizeText(childName, 50);
+    if (!name) return res.status(400).json({ error: 'childName is required' });
+
+    const now = new Date().toISOString();
+    const gender = childGender === 'boy' ? 'boy' : 'girl';
+    const birthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
+
+    db.run(
+      `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.id, name, birthDate, gender, normalizeText(childGoal, 120), now, now],
+      function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const newId = Number(this.lastID);
+        db.run(`UPDATE users SET selectedChildId = COALESCE(selectedChildId, ?) WHERE id = ?`, [newId, req.user.id], () => {});
+        logAudit(db, { userId: req.user.id, action: 'child_create', status: 'success', ip: getClientIp(req), detail: `childId=${newId}` });
+        return res.json({ id: newId });
+      }
+    );
+  });
+
+  app.put('/api/children/:id', authenticateToken, (req: any, res) => {
+    const childId = Number(req.params.id);
+    if (Number.isNaN(childId) || childId <= 0) return res.status(400).json({ error: 'invalid child id' });
+
+    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+    const name = normalizeText(childName, 50);
+    if (!name) return res.status(400).json({ error: 'childName is required' });
+
+    const gender = childGender === 'boy' ? 'boy' : 'girl';
+    const birthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
+    const now = new Date().toISOString();
+
+    db.run(
+      `UPDATE child_profiles
+       SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, updatedAt = ?
+       WHERE id = ? AND userId = ?`,
+      [name, birthDate, gender, normalizeText(childGoal, 120), now, childId, req.user.id],
+      function (err) {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!this.changes) return res.status(404).json({ error: 'child profile not found' });
+
+        logAudit(db, { userId: req.user.id, action: 'child_update', status: 'success', ip: getClientIp(req), detail: `childId=${childId}` });
+        return res.json({ success: true });
+      }
+    );
+  });
+
+  app.post('/api/children/:id/select', authenticateToken, (req: any, res) => {
+    const childId = Number(req.params.id);
+    if (Number.isNaN(childId) || childId <= 0) return res.status(400).json({ error: 'invalid child id' });
+
+    db.get(`SELECT id FROM child_profiles WHERE id = ? AND userId = ?`, [childId, req.user.id], (err: any, row: any) => {
       if (err) return res.status(500).json({ error: err.message });
-      // Convert completed from INTEGER to BOOLEAN for frontend
-      const todos = rows.map((row: any) => ({
-        ...row,
-        completed: row.completed === 1
-      }));
-      res.json(todos);
+      if (!row) return res.status(404).json({ error: 'child profile not found' });
+
+      db.run(`UPDATE users SET selectedChildId = ? WHERE id = ?`, [childId, req.user.id], function (uErr) {
+        if (uErr) return res.status(500).json({ error: uErr.message });
+        logAudit(db, { userId: req.user.id, action: 'child_select', status: 'success', ip: getClientIp(req), detail: `childId=${childId}` });
+        return res.json({ success: true });
+      });
     });
   });
 
+  // Backward-compatible Profile API (returns selected child)
+  app.get('/api/profile', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+
+      db.get(`SELECT id, email, createdAt FROM users WHERE id = ?`, [req.user.id], (uErr, user: any) => {
+        if (uErr) return res.status(500).json({ error: uErr.message });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (!selectedChildId) {
+          return res.json({
+            ...user,
+            selectedChildId: null,
+            childName: '',
+            childBirthDate: null,
+            childGender: 'girl',
+            childGoal: ''
+          });
+        }
+
+        db.get(
+          `SELECT childName, childBirthDate, childGender, childGoal FROM child_profiles WHERE id = ? AND userId = ?`,
+          [selectedChildId, req.user.id],
+          (cErr, child: any) => {
+            if (cErr) return res.status(500).json({ error: cErr.message });
+            return res.json({
+              ...user,
+              selectedChildId,
+              childName: child?.childName || '',
+              childBirthDate: child?.childBirthDate || null,
+              childGender: child?.childGender || 'girl',
+              childGoal: child?.childGoal || ''
+            });
+          }
+        );
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch profile' });
+    }
+  });
+
+  // Backward-compatible update profile (writes selected child)
+  app.put('/api/profile', authenticateToken, async (req: any, res) => {
+    const { childName, childBirthDate, childGender, childGoal } = req.body || {};
+
+    const normalizedGender = childGender === 'boy' ? 'boy' : 'girl';
+    const normalizedBirthDate = isValidDateString(childBirthDate) ? childBirthDate : null;
+    const normalizedName = normalizeText(childName, 50);
+
+    if (!normalizedName) return res.status(400).json({ error: 'childName is required' });
+
+    try {
+      let selectedChildId = await getSelectedChildId(req.user.id);
+      const now = new Date().toISOString();
+
+      if (!selectedChildId) {
+        db.run(
+          `INSERT INTO child_profiles (userId, childName, childBirthDate, childGender, childGoal, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [req.user.id, normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), now, now],
+          function (err) {
+            if (err) return res.status(500).json({ error: err.message });
+            const newId = Number(this.lastID);
+            db.run(`UPDATE users SET selectedChildId = ? WHERE id = ?`, [newId, req.user.id], (uErr) => {
+              if (uErr) return res.status(500).json({ error: uErr.message });
+              logAudit(db, { userId: req.user.id, action: 'profile_update', status: 'success', ip: getClientIp(req), detail: `created childId=${newId}` });
+              return res.json({ success: true });
+            });
+          }
+        );
+        return;
+      }
+
+      db.run(
+        `UPDATE child_profiles
+         SET childName = ?, childBirthDate = ?, childGender = ?, childGoal = ?, updatedAt = ?
+         WHERE id = ? AND userId = ?`,
+        [normalizedName, normalizedBirthDate, normalizedGender, normalizeText(childGoal, 120), now, selectedChildId, req.user.id],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          logAudit(db, { userId: req.user.id, action: 'profile_update', status: 'success', ip: getClientIp(req), detail: `updated childId=${selectedChildId}` });
+          return res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to update profile' });
+    }
+  });
+
+  // Get Todos
+  app.get('/api/todos', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.json([]);
+
+      db.all(`SELECT * FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC`, [req.user.id, selectedChildId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const todos = rows.map((row: any) => ({
+          ...row,
+          completed: row.completed === 1
+        }));
+        res.json(todos);
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch todos' });
+    }
+  });
+
   // Create Todo
-  app.post('/api/todos', authenticateToken, (req: any, res) => {
+  app.post('/api/todos', authenticateToken, async (req: any, res) => {
     const { text, priority = 'medium', dueDate = null } = req.body || {};
     const createdAt = new Date().toISOString();
 
@@ -440,19 +682,26 @@ async function startServer() {
     const normalizedPriority = allowedPriorities.includes(priority) ? priority : 'medium';
     const normalizedDueDate = normalizeOptionalDate(dueDate);
 
-    db.run(
-      `INSERT INTO todos (userId, text, completed, priority, dueDate, createdAt) VALUES (?, ?, 0, ?, ?, ?)`,
-      [req.user.id, normalizedText, normalizedPriority, normalizedDueDate, createdAt],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logAudit(db, { userId: req.user.id, action: 'todo_create', status: 'success', ip: getClientIp(req), detail: `todoId=${this.lastID}` });
-        res.json({ id: this.lastID, text: normalizedText, completed: false, priority: normalizedPriority, dueDate: normalizedDueDate, createdAt });
-      }
-    );
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `INSERT INTO todos (userId, childProfileId, text, completed, priority, dueDate, createdAt) VALUES (?, ?, ?, 0, ?, ?, ?)`,
+        [req.user.id, selectedChildId, normalizedText, normalizedPriority, normalizedDueDate, createdAt],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          logAudit(db, { userId: req.user.id, action: 'todo_create', status: 'success', ip: getClientIp(req), detail: `todoId=${this.lastID}; childId=${selectedChildId}` });
+          res.json({ id: this.lastID, text: normalizedText, completed: false, priority: normalizedPriority, dueDate: normalizedDueDate, createdAt });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to create todo' });
+    }
   });
 
   // Update Todo
-  app.put('/api/todos/:id', authenticateToken, (req: any, res) => {
+  app.put('/api/todos/:id', authenticateToken, async (req: any, res) => {
     const { completed, text, priority, dueDate } = req.body;
 
     const fields: string[] = [];
@@ -488,42 +737,67 @@ async function startServer() {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
-    values.push(req.params.id, req.user.id);
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
 
-    db.run(
-      `UPDATE todos SET ${fields.join(', ')} WHERE id = ? AND userId = ?`,
-      values,
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-      }
-    );
+      values.push(req.params.id, req.user.id, selectedChildId);
+
+      db.run(
+        `UPDATE todos SET ${fields.join(', ')} WHERE id = ? AND userId = ? AND childProfileId = ?`,
+        values,
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to update todo' });
+    }
   });
 
   // Delete Todo
-  app.delete('/api/todos/:id', authenticateToken, (req: any, res) => {
-    db.run(
-      `DELETE FROM todos WHERE id = ? AND userId = ?`,
-      [req.params.id, req.user.id],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logAudit(db, { userId: req.user.id, action: 'todo_delete', status: 'success', ip: getClientIp(req), detail: `todoId=${req.params.id}` });
-        res.json({ success: true });
-      }
-    );
+  app.delete('/api/todos/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `DELETE FROM todos WHERE id = ? AND userId = ? AND childProfileId = ?`,
+        [req.params.id, req.user.id, selectedChildId],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          logAudit(db, { userId: req.user.id, action: 'todo_delete', status: 'success', ip: getClientIp(req), detail: `todoId=${req.params.id}; childId=${selectedChildId}` });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to delete todo' });
+    }
   });
 
   // --- VITE MIDDLEWARE ---
   
   // Weekly Plan
-  app.get('/api/weekly-plan', authenticateToken, (req: any, res) => {
-    db.get(`SELECT planData FROM weekly_plan WHERE userId = ?`, [req.user.id], (err, row: any) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(row ? { planData: row.planData } : { planData: null });
-    });
+  app.get('/api/weekly-plan', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.json({ planData: null });
+
+      db.get(
+        `SELECT planData FROM weekly_plan WHERE userId = ? AND (childProfileId = ? OR childProfileId IS NULL) ORDER BY childProfileId DESC LIMIT 1`,
+        [req.user.id, selectedChildId],
+        (err, row: any) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json(row ? { planData: row.planData } : { planData: null });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch weekly plan' });
+    }
   });
 
-  app.post('/api/weekly-plan', authenticateToken, (req: any, res) => {
+  app.post('/api/weekly-plan', authenticateToken, async (req: any, res) => {
     const { planData } = req.body || {};
     const updatedAt = new Date().toISOString();
 
@@ -531,26 +805,44 @@ async function startServer() {
       return res.status(400).json({ error: 'Invalid weekly plan payload' });
     }
 
-    db.run(
-      `INSERT INTO weekly_plan (userId, planData, updatedAt) VALUES (?, ?, ?)
-       ON CONFLICT(userId) DO UPDATE SET planData = excluded.planData, updatedAt = excluded.updatedAt`,
-      [req.user.id, planData, updatedAt],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-      }
-    );
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `INSERT INTO weekly_plan (userId, childProfileId, planData, updatedAt) VALUES (?, ?, ?, ?)
+         ON CONFLICT(userId, childProfileId) DO UPDATE SET planData = excluded.planData, updatedAt = excluded.updatedAt`,
+        [req.user.id, selectedChildId, planData, updatedAt],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to save weekly plan' });
+    }
   });
 
   // Checklist
-  app.get('/api/checklist', authenticateToken, (req: any, res) => {
-    db.get(`SELECT checkedItems FROM checklist WHERE userId = ?`, [req.user.id], (err, row: any) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(row ? { checkedItems: row.checkedItems } : { checkedItems: null });
-    });
+  app.get('/api/checklist', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.json({ checkedItems: null });
+
+      db.get(
+        `SELECT checkedItems FROM checklist WHERE userId = ? AND (childProfileId = ? OR childProfileId IS NULL) ORDER BY childProfileId DESC LIMIT 1`,
+        [req.user.id, selectedChildId],
+        (err, row: any) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json(row ? { checkedItems: row.checkedItems } : { checkedItems: null });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch checklist' });
+    }
   });
 
-  app.post('/api/checklist', authenticateToken, (req: any, res) => {
+  app.post('/api/checklist', authenticateToken, async (req: any, res) => {
     const { checkedItems } = req.body || {};
     const updatedAt = new Date().toISOString();
 
@@ -558,26 +850,44 @@ async function startServer() {
       return res.status(400).json({ error: 'Invalid checklist payload' });
     }
 
-    db.run(
-      `INSERT INTO checklist (userId, checkedItems, updatedAt) VALUES (?, ?, ?)
-       ON CONFLICT(userId) DO UPDATE SET checkedItems = excluded.checkedItems, updatedAt = excluded.updatedAt`,
-      [req.user.id, checkedItems, updatedAt],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-      }
-    );
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `INSERT INTO checklist (userId, childProfileId, checkedItems, updatedAt) VALUES (?, ?, ?, ?)
+         ON CONFLICT(userId, childProfileId) DO UPDATE SET checkedItems = excluded.checkedItems, updatedAt = excluded.updatedAt`,
+        [req.user.id, selectedChildId, checkedItems, updatedAt],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to save checklist' });
+    }
   });
 
   // Grocery List
-  app.get('/api/grocery-list', authenticateToken, (req: any, res) => {
-    db.get(`SELECT listData FROM grocery_list WHERE userId = ?`, [req.user.id], (err, row: any) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(row ? { listData: row.listData } : { listData: null });
-    });
+  app.get('/api/grocery-list', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.json({ listData: null });
+
+      db.get(
+        `SELECT listData FROM grocery_list WHERE userId = ? AND (childProfileId = ? OR childProfileId IS NULL) ORDER BY childProfileId DESC LIMIT 1`,
+        [req.user.id, selectedChildId],
+        (err, row: any) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json(row ? { listData: row.listData } : { listData: null });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch grocery list' });
+    }
   });
 
-  app.post('/api/grocery-list', authenticateToken, (req: any, res) => {
+  app.post('/api/grocery-list', authenticateToken, async (req: any, res) => {
     const { listData } = req.body || {};
     const updatedAt = new Date().toISOString();
 
@@ -585,26 +895,40 @@ async function startServer() {
       return res.status(400).json({ error: 'Invalid grocery list payload' });
     }
 
-    db.run(
-      `INSERT INTO grocery_list (userId, listData, updatedAt) VALUES (?, ?, ?)
-       ON CONFLICT(userId) DO UPDATE SET listData = excluded.listData, updatedAt = excluded.updatedAt`,
-      [req.user.id, listData, updatedAt],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-      }
-    );
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `INSERT INTO grocery_list (userId, childProfileId, listData, updatedAt) VALUES (?, ?, ?, ?)
+         ON CONFLICT(userId, childProfileId) DO UPDATE SET listData = excluded.listData, updatedAt = excluded.updatedAt`,
+        [req.user.id, selectedChildId, listData, updatedAt],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to save grocery list' });
+    }
   });
 
   // Growth Records
-  app.get('/api/growth-records', authenticateToken, (req: any, res) => {
-    db.all(`SELECT * FROM growth_records WHERE userId = ? ORDER BY date DESC`, [req.user.id], (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
-    });
+  app.get('/api/growth-records', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.json([]);
+
+      db.all(`SELECT * FROM growth_records WHERE userId = ? AND childProfileId = ? ORDER BY date DESC`, [req.user.id, selectedChildId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to fetch growth records' });
+    }
   });
 
-  app.post('/api/growth-records', authenticateToken, (req: any, res) => {
+  app.post('/api/growth-records', authenticateToken, async (req: any, res) => {
     const { date, height, weight, bmi } = req.body || {};
     const createdAt = new Date().toISOString();
 
@@ -628,27 +952,41 @@ async function startServer() {
       return res.status(400).json({ error: 'bmi out of valid range' });
     }
 
-    db.run(
-      `INSERT INTO growth_records (userId, date, height, weight, bmi, createdAt) VALUES (?, ?, ?, ?, ?, ?)`,
-      [req.user.id, date, Number(h.toFixed(1)), Number(w.toFixed(1)), Number(b.toFixed(1)).toFixed(1), createdAt],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logAudit(db, { userId: req.user.id, action: 'growth_record_create', status: 'success', ip: getClientIp(req), detail: `recordId=${this.lastID}; date=${date}` });
-        res.json({ id: this.lastID, date, height: Number(h.toFixed(1)), weight: Number(w.toFixed(1)), bmi: Number(b.toFixed(1)).toFixed(1), createdAt });
-      }
-    );
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `INSERT INTO growth_records (userId, childProfileId, date, height, weight, bmi, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [req.user.id, selectedChildId, date, Number(h.toFixed(1)), Number(w.toFixed(1)), Number(b.toFixed(1)).toFixed(1), createdAt],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          logAudit(db, { userId: req.user.id, action: 'growth_record_create', status: 'success', ip: getClientIp(req), detail: `recordId=${this.lastID}; date=${date}; childId=${selectedChildId}` });
+          res.json({ id: this.lastID, date, height: Number(h.toFixed(1)), weight: Number(w.toFixed(1)), bmi: Number(b.toFixed(1)).toFixed(1), createdAt });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to create growth record' });
+    }
   });
 
-  app.delete('/api/growth-records/:id', authenticateToken, (req: any, res) => {
-    db.run(
-      `DELETE FROM growth_records WHERE id = ? AND userId = ?`,
-      [req.params.id, req.user.id],
-      function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logAudit(db, { userId: req.user.id, action: 'growth_record_delete', status: 'success', ip: getClientIp(req), detail: `recordId=${req.params.id}` });
-        res.json({ success: true });
-      }
-    );
+  app.delete('/api/growth-records/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      db.run(
+        `DELETE FROM growth_records WHERE id = ? AND userId = ? AND childProfileId = ?`,
+        [req.params.id, req.user.id, selectedChildId],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          logAudit(db, { userId: req.user.id, action: 'growth_record_delete', status: 'success', ip: getClientIp(req), detail: `recordId=${req.params.id}; childId=${selectedChildId}` });
+          res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to delete growth record' });
+    }
   });
 
   // Weekly Review (计划闭环)

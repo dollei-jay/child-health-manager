@@ -61,3 +61,8 @@
 13. 阶段P1.5（备份恢复SOP）首版已落地
    - 新增 backup/verify/restore 三个脚本
    - README 补齐可执行的备份恢复操作流程
+
+14. 阶段P2（多孩子档案）后端首版已落地
+   - 新增 child_profiles 与 selectedChildId，完成旧数据兼容迁移
+   - 待办/计划/清单/生长记录按选中孩子隔离存取
+   - 新增 children 管理与选择接口，保留 profile 兼容行为

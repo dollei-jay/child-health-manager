@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- 新增多孩子数据模型基础：`child_profiles` 表与 `users.selectedChildId`
+- 新增多孩子接口：`GET/POST/PUT /api/children`、`POST /api/children/:id/select`
+- 现有模块数据按“当前选中孩子”隔离（待办/计划/清单/生长记录）
+- 兼容旧接口：`/api/profile` 仍可读写当前选中孩子
 - 新增备份/校验/恢复脚本：`scripts/backup.sh`、`scripts/verify-backup.sh`、`scripts/restore.sh`
 - README 补充备份恢复 SOP 与风险提示
 - 新增审计日志基础能力（audit_logs 表）
