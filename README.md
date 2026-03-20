@@ -1,266 +1,211 @@
 # child-health-manager
 
-儿童健康成长管理系统（家庭版）  
-用于记录孩子基础信息、成长数据、周计划、采购清单与待办事项，支持账号登录和本地数据持久化。
+儿童健康成长管理系统（家庭版）
+
+> 目标：把「计划 - 执行 - 复盘 - 报告」做成可持续闭环，降低家长记录成本，提升孩子健康管理的连续性。
 
 - GitHub: https://github.com/dollei-jay/child-health-manager
+- Docker Hub: `dollei/child-health-manager:latest`
+- GHCR: `ghcr.io/dollei-jay/child-health-manager:latest`
 
 ---
 
 ## 1. 项目定位
 
-本项目用于家庭场景下的儿童健康管理，目标是：
+本项目服务家庭场景下的儿童健康成长管理，围绕三个核心问题：
 
-- 把“成长数据 + 日常计划 + 执行清单”集中管理
-- 降低记录成本，提升长期执行连续性
-- 为后续 AI 辅助分析打基础（持续开发中）
+1. **数据分散**：身高/体重、待办、采购、计划常分散在多个地方。
+2. **执行断档**：有计划但缺少日常打卡与复盘，难以长期坚持。
+3. **复盘困难**：缺少阶段报告，无法快速判断本周执行质量与趋势。
+
+系统通过统一入口把数据、计划和执行结果连接起来。
 
 ---
 
-## 2. 当前功能（已实现）
+## 2. 功能总览（当前可用）
 
+### 2.1 账号与档案
 - 用户注册 / 登录（JWT 鉴权）
 - 宝贝档案管理（姓名、生日、性别、目标）
-- 一周计划（可保存）
-- 备忘待办（新增/完成/删除）
-- 采购清单（可保存）
-- 生长记录（身高、体重、BMI，支持删除）
-- 统计展示页面
+
+### 2.2 日常执行
+- 备忘待办（新增 / 完成 / 删除 / 编辑）
+- 优先级与截止日期管理
+- 一周计划（可编辑、导入、导出、模板套用）
+- 每日打卡（早餐/运动/加餐/晚饭/早睡）
+- 采购清单（分类编辑）
+
+### 2.3 生长数据
+- 生长记录（日期、身高、体重、BMI）
+- 生长曲线图（趋势可视化）
+- 历史记录管理（含删除）
+
+### 2.4 统计与报告
+- 打卡日历统计（累计完成、完美达成天数、本月完成）
+- 成长报告中心（7/14/30天）
+  - 自动聚合：待办、打卡、周计划、采购、生长数据
+  - 生成执行建议
+  - Markdown 导出
+
+### 2.5 计划闭环（周复盘）
+- 周复盘模块（按周一为起点）
+- 记录：本周总结 / 阻塞问题 / 下周焦点 / 执行评分
+- 同一周支持反复更新（幂等保存）
 
 ---
 
+## 3. 产品亮点
 
-## 2.5 成长报告中心（新）
+1. **闭环思维落地**：不是单纯记数据，而是“计划-执行-复盘-报告”闭环。
+2. **家庭实操导向**：周计划、采购清单、打卡与待办联动，减少执行摩擦。
+3. **证据化输出**：周报可导出（Markdown），便于归档和对比。
+4. **UI 风格统一**：保持稳定、温和、易读的粉紫主题，不做风格漂移。
+5. **自动化发布**：推送 `main` 后自动构建并发布 Docker 镜像（双仓库）。
 
-新增「成长报告」模块（保持原有 UI 配色风格不变），支持：
+---
 
-- 报告周期选择：最近 7 / 14 / 30 天
-- 一键生成周报：聚合待办、打卡、周计划、采购、生长记录
-- 趋势摘要：体重/身高/BMI 区间变化（样本不足时给出提示）
-- 执行建议：基于逾期待办、打卡频次、生长变化自动生成
-- 报告导出：Markdown 文件（便于归档与二次编辑）
-
-前端入口：顶部导航「成长报告」
-后端接口：`GET /api/reports/weekly?days=7|14|30`
-
-
-## 2.6 计划闭环（周复盘）
-
-新增「周复盘」模块，形成计划闭环：
-
-- 以“周一”为起始维护周复盘记录
-- 记录本周执行总结 / 阻塞问题 / 下周焦点
-- 支持 0-100 分执行评分
-- 每周可反复编辑并保存（同一周自动覆盖更新）
-
-前端入口：顶部导航「周复盘」
-后端接口：
-- `GET /api/weekly-review?weekStart=YYYY-MM-DD`
-- `POST /api/weekly-review`
-
-## 3. 技术栈
+## 4. 技术栈
 
 - 前端：React + Vite + TypeScript + Tailwind
 - 后端：Express + TypeScript
 - 数据库：SQLite（文件持久化）
 - 鉴权：JWT + bcryptjs
-- 部署：Docker / docker-compose（支持群晖 Container Manager）
+- 部署：Docker / docker-compose
+- CI/CD：GitHub Actions（推送 main 自动发布镜像）
 
 ---
 
-## 4. 本地开发
+## 5. 本地开发
 
-### 4.1 环境要求
-
+### 5.1 环境要求
 - Node.js 20+
 - npm 10+
 
-### 4.2 启动步骤
-
+### 5.2 启动
 ```bash
 npm install
 npm run dev
 ```
+默认地址：`http://localhost:3000`
 
-默认监听：`http://localhost:3000`
-
-### 4.3 常用命令
-
+### 5.3 常用命令
 ```bash
-npm run dev      # 开发启动（前后端同进程）
-npm run build    # 构建前端
-npm run start    # 启动服务
-npm run lint     # TypeScript 类型检查
+npm run dev      # 开发运行
+npm run lint     # TypeScript 检查
+npm run build    # 前端构建
+npm run start    # 生产启动
 ```
 
 ---
 
-## 5. 环境变量
+## 6. 生产部署（Docker）
 
-> 生产环境至少配置以下变量：
-
-| 变量名 | 必填 | 说明 |
-|---|---|---|
-| `NODE_ENV` | 是 | `production` |
-| `JWT_SECRET` | 是 | JWT 密钥，必须为高强度随机字符串 |
-| `PORT` | 否 | 默认 `3000` |
-
-示例：
-
-```env
-NODE_ENV=production
-PORT=3000
-JWT_SECRET=请替换为至少32位随机复杂字符串
-```
-
----
-
-## 6. Docker 部署
-
-### 6.2 自动发布 Docker 镜像（main 分支）
-
-已启用 GitHub Actions 自动发布：
-
-- 触发条件：推送到 `main`
-- 镜像仓库：`ghcr.io/dollei-jay/child-health-manager`
-- 标签策略：
-  - `latest`（main 最新）
-  - `sha-<commit>`（可精确回滚）
-
-工作流文件：`.github/workflows/docker-publish.yml`
-
-
-### 6.1 直接 compose 启动（通用 Linux）
-
-```bash
-docker compose up -d --build
-```
-
-当前 `docker-compose.yml` 已包含：
-
-- 端口映射：`3000:3000`
-- 数据卷：`./data:/app/data`
-- 自动重启：`unless-stopped`
-
----
-
-## 7. 群晖 Docker 部署规则（强制执行）
-
-> 适用于 DSM 7.x + Container Manager。  
-> 后续上线、迁移、重装请按本节执行，避免数据丢失和安全问题。
-
-### 7.1 目录规范（必须）
-
-在群晖创建固定目录（示例）：
-
+### 6.1 推荐目录结构（群晖/Linux 通用）
 ```text
 /volume1/docker/child-health-manager/
 ├─ docker-compose.yml
 ├─ .env
-└─ data/                  # SQLite 持久化目录（核心数据）
+└─ data/
 ```
 
-**规则：**
-1. 必须持久化 `data/`，否则容器重建会丢失数据库。
-2. 禁止把数据库放在容器临时层。
-3. 备份时必须包含 `data/ + .env + compose 文件`。
-
-### 7.2 镜像与服务规范（必须）
-
-1. 重启策略：`unless-stopped`
-2. 容器端口：`3000`
-3. 宿主机端口：建议使用非冲突端口（如 `13000:3000`）
-4. 环境变量必须通过 `.env` 注入，不要硬编码到镜像
-5. `JWT_SECRET` 必须替换为高强度随机值（至少 32 位）
-
-示例 `.env`：
-
+### 6.2 `.env` 示例
 ```env
 NODE_ENV=production
 PORT=3000
-JWT_SECRET=替换成高强度随机字符串
+JWT_SECRET=请替换为至少32位高强度随机字符串
 ```
 
-### 7.3 网络与访问控制（必须）
+### 6.3 compose 示例（Docker Hub）
+```yaml
+services:
+  app:
+    image: dollei/child-health-manager:latest
+    container_name: child-health-manager
+    restart: unless-stopped
+    ports:
+      - "13000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+```
 
-1. 默认仅内网开放端口（NAS 防火墙白名单）。
-2. 对外访问必须走 DSM 反向代理 + HTTPS（证书）。
-3. 不建议直接公网暴露 `3000`。
-4. 建议为域名配置访问日志，便于审计与故障追踪。
+启动：
+```bash
+docker compose pull
+docker compose up -d
+```
 
-### 7.4 反向代理建议（推荐）
+访问：
+`http://<NAS-IP>:13000`
 
-- 外部：`https://child.xxx.com`
-- 内部转发：`http://127.0.0.1:13000`
-- 开启 HSTS（按实际情况）
-- 配置证书自动续签（Let's Encrypt 或企业证书）
-
-### 7.5 升级与回滚规范（必须）
-
-**升级流程：**
-1. 备份 `data/`（快照或压缩备份）
-2. 拉取最新代码
-3. `docker compose up -d --build`
-4. 验证登录、档案、记录读写
-
-**回滚流程：**
-1. 停止当前容器
-2. 切回上一个稳定版本（镜像/代码）
-3. 保留并复用原 `data/`
-4. 重启并验证核心功能
-
-### 7.6 日志与巡检（推荐）
-
-- 查看日志：`docker logs -f qinqin_baby_app`
-- 每周检查：
-  - 容器状态（是否反复重启）
-  - 磁盘占用（`data/` 增长情况）
-  - 最近备份是否可恢复
+### 6.4 自动发布镜像（已启用）
+- 触发条件：push 到 `main`
+- 发布目标：
+  - `ghcr.io/dollei-jay/child-health-manager:latest`
+  - `dollei/child-health-manager:latest`
+- 工作流文件：`.github/workflows/docker-publish.yml`
 
 ---
 
-## 8. 数据与备份
+## 7. 更新日志
 
-- SQLite 文件路径（容器内）：`/app/data/database.sqlite`
-- 建议备份频率：每天增量 + 每周全量
-- 备份校验：至少每月做一次恢复演练
+- 详细日志：[`CHANGELOG.md`](./CHANGELOG.md)
+- 开发过程记录：[`DEVELOPMENT_PROGRESS.md`](./DEVELOPMENT_PROGRESS.md)
 
----
-
-## 9. 当前已知限制（现状说明）
-
-1. JWT 目前无过期策略（后续版本将加入）
-2. 接口输入校验仍需加强（后续加 schema 校验）
-3. 登录接口限流尚未启用（后续补齐）
-4. 前端构建包体偏大（后续做代码分割）
+近期重点更新：
+1. 成长报告中心（自动聚合 + Markdown 导出）
+2. 周复盘模块（计划闭环）
+3. main 推送自动双仓库镜像发布（GHCR + Docker Hub）
 
 ---
 
-## 10. 后续持续开发计划（建议优先级）
+## 8. 已完成内容（里程碑）
 
-### P0（安全与稳定）
-- 强制 `JWT_SECRET` 校验（无值禁止启动）
-- JWT 过期与续签机制
-- 登录限流与防暴力破解
-- 统一请求参数校验和错误处理
+### 已完成
+- 基础可用性主链路（登录、档案、计划、待办、清单、记录）
+- 生长记录与趋势图
+- 打卡统计与总览
+- 成长报告输出
+- 周复盘闭环模块
+- 自动 Docker 发布流水线
 
-### P1（工程化）
-- 完善 README / 运维手册 / 备份恢复 SOP
-- 增加基础 API 自动化测试
-- 优化前端打包体积
+### 验证方式
+每次发版遵循：
+1. 本地 `npm run lint` 通过
+2. 本地 `npm run build` 通过
+3. 推送 `main`
+4. GitHub Actions 自动发布镜像
 
-### P2（功能增强）
+---
+
+## 9. 开发计划（滚动）
+
+### P0（稳定与安全）
+- 强制校验 `JWT_SECRET`（生产环境无值禁止启动）
+- 登录限流与基础防暴力破解
+- 接口输入校验统一化
+
+### P1（体验与工程化）
+- 生长/BMI 趋势判读增强（阈值提示、更清晰趋势文案）
+- 前端包体优化（按模块拆包）
+- 基础自动化测试补齐（关键 API 与回归路径）
+
+### P2（能力增强）
 - 多孩子档案支持
-- 生长曲线对标分析
-- 计划模板与提醒机制
-- 数据导出（CSV/PDF）
+- 提醒机制（计划/记录提醒）
+- 数据导出扩展（CSV/PDF）
+
+---
+
+## 10. 风险与运维提示
+
+1. **必须挂载 `./data:/app/data`**，否则容器重建会丢失 SQLite 数据。
+2. 修改 `JWT_SECRET` 会导致旧 token 失效，用户需重新登录。
+3. 建议通过反向代理 + HTTPS 暴露服务，不建议直接公网裸露端口。
 
 ---
 
 ## 11. 许可证
 
-暂未指定（可后续补充 `LICENSE` 文件）。
-
-## 开发流程
-
-- 参见 [DEV_WORKFLOW.md](./DEV_WORKFLOW.md)（本地先测试，再推 GitHub 的标准流程）
+暂未指定（后续可补充 `LICENSE`）。
