@@ -9,6 +9,8 @@ interface ReminderItem {
   level: ReminderLevel;
   title: string;
   detail?: string;
+  reminderHash?: string;
+  status?: 'active' | 'read' | 'snoozed';
 }
 
 export default function ReminderCenter({ onGotoTab }: { onGotoTab?: (tab: string) => void }) {
@@ -51,6 +53,26 @@ export default function ReminderCenter({ onGotoTab }: { onGotoTab?: (tab: string
     return onGotoTab('dashboard');
   };
 
+  const markRead = async (item: ReminderItem) => {
+    if (!item.reminderHash) return;
+    try {
+      await api.markReminderRead(item.type, item.reminderHash);
+      await fetchReminders();
+    } catch (err) {
+      console.error('mark read failed', err);
+    }
+  };
+
+  const snooze = async (item: ReminderItem, minutes = 120) => {
+    if (!item.reminderHash) return;
+    try {
+      await api.snoozeReminder(item.type, item.reminderHash, minutes);
+      await fetchReminders();
+    } catch (err) {
+      console.error('snooze failed', err);
+    }
+  };
+
   if (loading) {
     return <div className="animate-pulse text-center py-10 text-stone-400">加载提醒中...</div>;
   }
@@ -85,9 +107,9 @@ export default function ReminderCenter({ onGotoTab }: { onGotoTab?: (tab: string
         </div>
       ) : (
         <div className="space-y-4">
-          <ReminderGroup title="高优先（危险）" tone="danger" items={grouped.danger} onGoto={gotoByType} />
-          <ReminderGroup title="中优先（预警）" tone="warning" items={grouped.warning} onGoto={gotoByType} />
-          <ReminderGroup title="提示信息" tone="info" items={grouped.info} onGoto={gotoByType} />
+          <ReminderGroup title="高优先（危险）" tone="danger" items={grouped.danger} onGoto={gotoByType} onMarkRead={markRead} onSnooze={snooze} />
+          <ReminderGroup title="中优先（预警）" tone="warning" items={grouped.warning} onGoto={gotoByType} onMarkRead={markRead} onSnooze={snooze} />
+          <ReminderGroup title="提示信息" tone="info" items={grouped.info} onGoto={gotoByType} onMarkRead={markRead} onSnooze={snooze} />
         </div>
       )}
     </div>
@@ -98,12 +120,16 @@ function ReminderGroup({
   title,
   tone,
   items,
-  onGoto
+  onGoto,
+  onMarkRead,
+  onSnooze
 }: {
   title: string;
   tone: ReminderLevel;
   items: ReminderItem[];
   onGoto: (type: string) => void;
+  onMarkRead: (item: ReminderItem) => void;
+  onSnooze: (item: ReminderItem, minutes?: number) => void;
 }) {
   const styles = {
     danger: {
@@ -139,12 +165,26 @@ function ReminderGroup({
                 <p className="text-sm font-bold text-stone-700">{item.title}</p>
                 {item.detail && <p className="text-xs text-stone-500 mt-1 leading-relaxed">{item.detail}</p>}
               </div>
-              <button
-                onClick={() => onGoto(item.type)}
-                className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-pink-200 text-pink-600 hover:bg-pink-50 shrink-0"
-              >
-                去处理
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => onGoto(item.type)}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-pink-200 text-pink-600 hover:bg-pink-50"
+                >
+                  去处理
+                </button>
+                <button
+                  onClick={() => onSnooze(item, 120)}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50"
+                >
+                  静默2h
+                </button>
+                <button
+                  onClick={() => onMarkRead(item)}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50"
+                >
+                  已读
+                </button>
+              </div>
             </div>
           </div>
         ))}

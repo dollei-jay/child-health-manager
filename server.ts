@@ -195,6 +195,18 @@ async function startServer() {
         detail TEXT,
         createdAt TEXT
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS reminder_states (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
+        childProfileId INTEGER,
+        reminderType TEXT,
+        reminderHash TEXT,
+        status TEXT,
+        snoozeUntil TEXT,
+        updatedAt TEXT,
+        UNIQUE(userId, childProfileId, reminderType, reminderHash)
+      )`);
     }
   });
 
@@ -328,6 +340,15 @@ async function startServer() {
     if (value === null || value === undefined || value === '') return null;
     const dateStr = String(value);
     return isValidDateString(dateStr) ? dateStr : null;
+  };
+
+  const buildReminderHash = (type: string, detail: string) => {
+    const src = `${type}|${detail}`;
+    let hash = 0;
+    for (let i = 0; i < src.length; i++) {
+      hash = (hash * 31 + src.charCodeAt(i)) >>> 0;
+    }
+    return String(hash);
   };
 
   const getSelectedChildId = (userId: number): Promise<number | null> => {
@@ -1223,11 +1244,39 @@ async function startServer() {
                     });
                   }
 
-                  return res.json({
-                    childProfileId: selectedChildId,
-                    date: todayISO,
-                    items
-                  });
+                  const nowIso = new Date().toISOString();
+
+                  db.all(
+                    `SELECT reminderType, reminderHash, status, snoozeUntil FROM reminder_states WHERE userId = ? AND childProfileId = ?`,
+                    [req.user.id, selectedChildId],
+                    (stateErr: any, stateRows: any[]) => {
+                      if (stateErr) return res.status(500).json({ error: stateErr.message });
+
+                      const stateMap = new Map<string, any>();
+                      (stateRows || []).forEach((r) => stateMap.set(`${r.reminderType}|${r.reminderHash}`, r));
+
+                      const filtered = items
+                        .map((it) => {
+                          const hash = buildReminderHash(it.type, String(it.detail || ''));
+                          const key = `${it.type}|${hash}`;
+                          const st = stateMap.get(key);
+                          const snoozed = st?.status === 'snoozed' && st?.snoozeUntil && st.snoozeUntil > nowIso;
+                          const read = st?.status === 'read';
+                          return {
+                            ...it,
+                            reminderHash: hash,
+                            status: snoozed ? 'snoozed' : read ? 'read' : 'active'
+                          };
+                        })
+                        .filter((it) => it.status !== 'read' && it.status !== 'snoozed');
+
+                      return res.json({
+                        childProfileId: selectedChildId,
+                        date: todayISO,
+                        items: filtered
+                      });
+                    }
+                  );
                 }
               );
             }
@@ -1236,6 +1285,63 @@ async function startServer() {
       );
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'failed to build reminders' });
+    }
+  });
+
+  app.post('/api/reminders/:type/:hash/read', authenticateToken, async (req: any, res) => {
+    const type = String(req.params.type || '').trim();
+    const hash = String(req.params.hash || '').trim();
+    if (!type || !hash) return res.status(400).json({ error: 'invalid reminder key' });
+
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      const nowIso = new Date().toISOString();
+      db.run(
+        `INSERT INTO reminder_states (userId, childProfileId, reminderType, reminderHash, status, snoozeUntil, updatedAt)
+         VALUES (?, ?, ?, ?, 'read', NULL, ?)
+         ON CONFLICT(userId, childProfileId, reminderType, reminderHash)
+         DO UPDATE SET status='read', snoozeUntil=NULL, updatedAt=excluded.updatedAt`,
+        [req.user.id, selectedChildId, type, hash, nowIso],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          return res.json({ success: true });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to mark reminder read' });
+    }
+  });
+
+  app.post('/api/reminders/:type/:hash/snooze', authenticateToken, async (req: any, res) => {
+    const type = String(req.params.type || '').trim();
+    const hash = String(req.params.hash || '').trim();
+    const minutesRaw = Number(req.body?.minutes || 60);
+    const minutes = Number.isNaN(minutesRaw) ? 60 : Math.min(7 * 24 * 60, Math.max(10, minutesRaw));
+    if (!type || !hash) return res.status(400).json({ error: 'invalid reminder key' });
+
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      if (!selectedChildId) return res.status(400).json({ error: 'No child profile selected' });
+
+      const now = new Date();
+      const snoozeUntil = new Date(now.getTime() + minutes * 60 * 1000).toISOString();
+      const nowIso = now.toISOString();
+
+      db.run(
+        `INSERT INTO reminder_states (userId, childProfileId, reminderType, reminderHash, status, snoozeUntil, updatedAt)
+         VALUES (?, ?, ?, ?, 'snoozed', ?, ?)
+         ON CONFLICT(userId, childProfileId, reminderType, reminderHash)
+         DO UPDATE SET status='snoozed', snoozeUntil=excluded.snoozeUntil, updatedAt=excluded.updatedAt`,
+        [req.user.id, selectedChildId, type, hash, snoozeUntil, nowIso],
+        function (err) {
+          if (err) return res.status(500).json({ error: err.message });
+          return res.json({ success: true, snoozeUntil });
+        }
+      );
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'failed to snooze reminder' });
     }
   });
 

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- 新增提醒状态管理：已读 / 静默（snooze）
+- 新增提醒状态接口：
+  - `POST /api/reminders/:type/:hash/read`
+  - `POST /api/reminders/:type/:hash/snooze`
+- 提醒中心支持“静默2小时 / 已读”操作并即时刷新
 - 新增“提醒中心”页面，支持按风险级别分组展示提醒项
 - 每条提醒支持一键跳转到对应模块处理（待办/生长/周复盘）
 - 新增站内提醒接口：`GET /api/reminders`

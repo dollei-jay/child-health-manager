@@ -308,5 +308,30 @@ export const api = {
       throw new Error(err.error || 'Failed to fetch reminders');
     }
     return res.json();
+  },
+
+  async markReminderRead(type: string, hash: string) {
+    const res = await fetch(`${API_URL}/reminders/${encodeURIComponent(type)}/${encodeURIComponent(hash)}/read`, {
+      method: 'POST',
+      headers: headers()
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to mark reminder read');
+    }
+    return res.json();
+  },
+
+  async snoozeReminder(type: string, hash: string, minutes: number = 60) {
+    const res = await fetch(`${API_URL}/reminders/${encodeURIComponent(type)}/${encodeURIComponent(hash)}/snooze`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ minutes })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to snooze reminder');
+    }
+    return res.json();
   }
 };
