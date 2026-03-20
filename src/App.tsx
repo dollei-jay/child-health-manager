@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home } from 'lucide-react';
+import { CalendarDays, ShoppingCart, BookOpen, Sparkles, BarChart2, TrendingUp, LogOut, ListTodo, Settings, Home, FileText } from 'lucide-react';
 import WeeklyPlan from './components/WeeklyPlan';
 import GroceryList from './components/GroceryList';
 import Principles from './components/Principles';
@@ -9,6 +9,7 @@ import Auth from './components/Auth';
 import Todos from './components/Todos';
 import ProfileSettings from './components/ProfileSettings';
 import Dashboard from './components/Dashboard';
+import ReportCenter from './components/ReportCenter';
 import { api, getToken, removeToken } from './api';
 
 interface UserProfile {
@@ -120,6 +121,7 @@ function App() {
       case 'growth': return <GrowthTracker />;
       case 'grocery': return <GroceryList />;
       case 'todos': return <Todos />;
+      case 'reports': return <ReportCenter />;
       default: return <Principles />;
     }
   };
@@ -211,6 +213,12 @@ function App() {
                     onClick={() => setActiveTab('todos')} 
                     icon={<ListTodo size={16} />} 
                     label="备忘待办" 
+                  />
+                  <TabButton 
+                    active={activeTab === 'reports'} 
+                    onClick={() => setActiveTab('reports')} 
+                    icon={<FileText size={16} />} 
+                    label="成长报告" 
                   />
                 </nav>
               </div>

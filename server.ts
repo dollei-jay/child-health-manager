@@ -110,13 +110,52 @@ async function startServer() {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (token == null) return res.sendStatus(401);
+    if (token == null) return res.status(401).json({ error: 'Unauthorized' });
 
     jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-      if (err) return res.sendStatus(403);
+      if (err) return res.status(403).json({ error: 'Forbidden' });
       req.user = user;
       next();
     });
+  };
+
+  const startOfDay = (date: Date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const toFixedMaybe = (value: any, digits = 1) => {
+    const num = Number(value);
+    if (Number.isNaN(num)) return null;
+    return Number(num.toFixed(digits));
+  };
+
+  const parseMaybeJson = (value: any, fallback: any) => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const countWeeklyPlanTasks = (planData: any[]) => {
+    if (!Array.isArray(planData)) return 0;
+    return planData.reduce((acc, day: any) => {
+      const food = day?.food && typeof day.food === 'object' ? day.food : {};
+      const foodCount = Object.values(food).filter((item: any) => typeof item === 'string' && item.trim()).length;
+      const exerciseCount = Array.isArray(day?.exercise) ? day.exercise.filter((item: any) => typeof item === 'string' && item.trim()).length : 0;
+      return acc + foodCount + exerciseCount;
+    }, 0);
+  };
+
+  const countGroceryItems = (groceryData: Record<string, string[]>) => {
+    if (!groceryData || typeof groceryData !== 'object') return 0;
+    return Object.values(groceryData).reduce((acc, val: any) => {
+      if (!Array.isArray(val)) return acc;
+      return acc + val.filter(item => typeof item === 'string' && item.trim()).length;
+    }, 0);
   };
 
   // --- API ROUTES ---
@@ -383,6 +422,162 @@ async function startServer() {
         res.json({ success: true });
       }
     );
+  });
+
+  // Weekly Report
+  app.get('/api/reports/weekly', authenticateToken, (req: any, res) => {
+    const daysRaw = Number(req.query.days || 7);
+    const days = Number.isNaN(daysRaw) ? 7 : Math.min(30, Math.max(7, daysRaw));
+
+    const today = startOfDay(new Date());
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - (days - 1));
+
+    const startISO = startDate.toISOString().slice(0, 10);
+    const endISO = today.toISOString().slice(0, 10);
+
+    const todosSql = `SELECT id, text, completed, priority, dueDate, createdAt FROM todos WHERE userId = ? ORDER BY createdAt DESC`;
+    const growthSql = `SELECT id, date, height, weight, bmi, createdAt FROM growth_records WHERE userId = ? ORDER BY date DESC`;
+    const weeklyPlanSql = `SELECT planData FROM weekly_plan WHERE userId = ?`;
+    const grocerySql = `SELECT listData FROM grocery_list WHERE userId = ?`;
+    const checklistSql = `SELECT checkedItems FROM checklist WHERE userId = ?`;
+
+    db.all(todosSql, [req.user.id], (todoErr: any, todosRows: any[]) => {
+      if (todoErr) return res.status(500).json({ error: todoErr.message });
+
+      db.all(growthSql, [req.user.id], (growthErr: any, growthRows: any[]) => {
+        if (growthErr) return res.status(500).json({ error: growthErr.message });
+
+        db.get(weeklyPlanSql, [req.user.id], (planErr: any, planRow: any) => {
+          if (planErr) return res.status(500).json({ error: planErr.message });
+
+          db.get(grocerySql, [req.user.id], (groceryErr: any, groceryRow: any) => {
+            if (groceryErr) return res.status(500).json({ error: groceryErr.message });
+
+            db.get(checklistSql, [req.user.id], (checkErr: any, checklistRow: any) => {
+              if (checkErr) return res.status(500).json({ error: checkErr.message });
+
+              const todos = Array.isArray(todosRows)
+                ? todosRows.map((row: any) => ({
+                    ...row,
+                    completed: row.completed === 1
+                  }))
+                : [];
+
+              const activeTodos = todos.filter((t: any) => !t.completed).length;
+              const completedTodos = todos.filter((t: any) => t.completed).length;
+              const overdueTodos = todos.filter((t: any) => {
+                if (t.completed || !t.dueDate) return false;
+                const due = new Date(t.dueDate);
+                if (Number.isNaN(due.getTime())) return false;
+                return startOfDay(due) < today;
+              }).length;
+
+              const weeklyPlanData = parseMaybeJson(planRow?.planData, []);
+              const groceryData = parseMaybeJson(groceryRow?.listData, {});
+              const checklistData = parseMaybeJson(checklistRow?.checkedItems, {});
+
+              const weeklyPlanTasks = countWeeklyPlanTasks(weeklyPlanData);
+              const groceryItems = countGroceryItems(groceryData);
+
+              const checkinCount = Object.entries(checklistData).filter(([key, checked]) => {
+                if (!checked || typeof key !== 'string') return false;
+                const datePart = key.substring(0, 10);
+                return datePart >= startISO && datePart <= endISO;
+              }).length;
+
+              const checkinsByDay: Record<string, number> = {};
+              Object.entries(checklistData).forEach(([key, checked]) => {
+                if (!checked || typeof key !== 'string') return;
+                const datePart = key.substring(0, 10);
+                if (datePart < startISO || datePart > endISO) return;
+                checkinsByDay[datePart] = (checkinsByDay[datePart] || 0) + 1;
+              });
+              const perfectDays = Object.values(checkinsByDay).filter((count) => count >= 5).length;
+
+              const growthSortedAsc = Array.isArray(growthRows)
+                ? [...growthRows].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                : [];
+
+              const growthInRange = growthSortedAsc.filter((item: any) => item.date >= startISO && item.date <= endISO);
+              const latestGrowth = growthSortedAsc.length ? growthSortedAsc[growthSortedAsc.length - 1] : null;
+
+              let trend7d = {
+                weightDeltaKg: null as number | null,
+                heightDeltaCm: null as number | null,
+                bmiDelta: null as number | null
+              };
+
+              if (growthInRange.length >= 2) {
+                const first = growthInRange[0];
+                const last = growthInRange[growthInRange.length - 1];
+                trend7d = {
+                  weightDeltaKg: toFixedMaybe(Number(last.weight) - Number(first.weight), 1),
+                  heightDeltaCm: toFixedMaybe(Number(last.height) - Number(first.height), 1),
+                  bmiDelta: toFixedMaybe(Number(last.bmi) - Number(first.bmi), 1)
+                };
+              }
+
+              const recommendations: string[] = [];
+
+              if (overdueTodos > 0) {
+                recommendations.push(`当前有 ${overdueTodos} 项逾期待办，建议先清理高优先项并补上截止日期。`);
+              }
+
+              if (checkinCount < Math.floor(days * 3.5)) {
+                recommendations.push('本周期打卡偏少，建议把每日打卡拆成“早餐/运动/早睡”三项优先完成。');
+              }
+
+              if (growthInRange.length < 2) {
+                recommendations.push('生长趋势样本不足，建议每周至少记录 1 次身高/体重。');
+              } else if ((trend7d.weightDeltaKg ?? 0) > 0.8) {
+                recommendations.push('体重增速偏快，建议优先提升户外活动时长并减少高糖零食频次。');
+              } else {
+                recommendations.push('当前生长数据节奏总体可控，继续保持“稳定记录 + 周计划执行”。');
+              }
+
+              if (weeklyPlanTasks === 0) {
+                recommendations.push('周计划尚未配置，建议先套用标准模板再按家庭节奏微调。');
+              }
+
+              if (recommendations.length < 3) {
+                recommendations.push('保持“先计划、再执行、后复盘”的闭环，每周固定一次报告复盘。');
+              }
+
+              return res.json({
+                period: {
+                  start: startISO,
+                  end: endISO,
+                  days
+                },
+                overview: {
+                  activeTodos,
+                  completedTodos,
+                  overdueTodos,
+                  weeklyPlanTasks,
+                  groceryItems,
+                  checkins: checkinCount,
+                  perfectDays
+                },
+                growth: {
+                  latest: latestGrowth
+                    ? {
+                        date: latestGrowth.date,
+                        height: Number(latestGrowth.height),
+                        weight: Number(latestGrowth.weight),
+                        bmi: Number(latestGrowth.bmi)
+                      }
+                    : null,
+                  trend7d
+                },
+                recommendations: recommendations.slice(0, 5),
+                generatedAt: new Date().toISOString()
+              });
+            });
+          });
+        });
+      });
+    });
   });
 
   if (process.env.NODE_ENV !== "production") {

@@ -208,5 +208,14 @@ export const api = {
       throw new Error(err.error || 'Failed to delete growth record');
     }
     return res.json();
+  },
+
+  async getWeeklyReport(days: number = 7) {
+    const res = await fetch(`${API_URL}/reports/weekly?days=${days}`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch weekly report');
+    }
+    return res.json();
   }
 };
