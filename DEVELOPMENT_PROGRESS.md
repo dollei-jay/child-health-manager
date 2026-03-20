@@ -110,3 +110,7 @@
 25. 阶段P1.6（API冒烟测试）已落地
    - 新增 scripts/api-smoke-test.mjs 与 npm run test:smoke
    - 已本地实测通过，覆盖关键接口链路
+
+26. 阶段P1.7（发布门禁）已落地
+   - GitHub Actions 增加 smoke job，docker job 依赖 smoke 通过
+   - 实现“先验证后发版”，降低坏镜像发布风险
