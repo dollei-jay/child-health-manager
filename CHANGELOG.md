@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- 新增备份/校验/恢复脚本：`scripts/backup.sh`、`scripts/verify-backup.sh`、`scripts/restore.sh`
+- README 补充备份恢复 SOP 与风险提示
 - 新增审计日志基础能力（audit_logs 表）
 - 记录登录成功/失败/限流与关键写操作（档案更新、待办增删、生长记录增删）
 - 新增审计查询接口：`GET /api/audit-logs?limit=50`

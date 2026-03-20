@@ -100,6 +100,33 @@ npm run start    # 生产启动
 
 ## 6. 生产部署（Docker）
 
+### 6.5 备份与恢复（SOP）
+
+已提供脚本：
+
+- `scripts/backup.sh`：创建备份包（`data/` 或 `database.sqlite` + `.env` + `docker-compose.yml`）
+- `scripts/verify-backup.sh`：校验备份包完整性（sha256）
+- `scripts/restore.sh`：恢复备份到目标目录
+
+示例：
+
+```bash
+# 1) 执行备份
+./scripts/backup.sh /path/to/backups
+
+# 2) 校验备份
+./scripts/verify-backup.sh /path/to/backups/child-health-manager-backup-YYYYmmdd-HHMMSS.tar.gz
+
+# 3) 恢复（会提示风险确认）
+./scripts/restore.sh /path/to/backups/child-health-manager-backup-YYYYmmdd-HHMMSS.tar.gz /path/to/app
+
+# 4) 恢复后启动
+cd /path/to/app && docker compose up -d
+```
+
+【风险提示】恢复会覆盖目标 `data/` 目录，请先确认或保留快照。
+
+
 ### 6.1 推荐目录结构（群晖/Linux 通用）
 ```text
 /volume1/docker/child-health-manager/
