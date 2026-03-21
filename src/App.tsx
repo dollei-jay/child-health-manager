@@ -2,6 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { CalendarDays, ShoppingCart, TrendingUp, LogOut, ListTodo, Settings, Home, Bell, Repeat } from 'lucide-react';
 import Auth from './components/Auth';
 import ProfileSettings from './components/ProfileSettings';
+import AIAssistant from './components/ai/AIAssistant';
 
 const WeeklyPlan = lazy(() => import('./components/WeeklyPlan'));
 const GroceryList = lazy(() => import('./components/GroceryList'));
@@ -358,6 +359,11 @@ function App() {
         userProfile={userProfile} 
         onProfileUpdate={setUserProfile}
         onRefreshProfile={fetchAndSetProfile}
+      />
+
+      <AIAssistant
+        childName={userProfile?.childName || childMeta.selectedName}
+        childProfileId={Number(userProfile?.selectedChildId) || undefined}
       />
     </div>
   );

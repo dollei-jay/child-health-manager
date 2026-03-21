@@ -342,5 +342,31 @@ export const api = {
       throw new Error(err.error || 'Failed to snooze reminder');
     }
     return res.json();
+  },
+
+  async aiChat(data: { message: string; sessionId?: number | null; childProfileId?: number; confirmMedicalWrite?: boolean; functionCall?: any }) {
+    const res = await fetch(`${API_URL}/ai/chat`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to chat with AI');
+    }
+    return res.json();
+  },
+
+  async aiUndo(undoToken: string) {
+    const res = await fetch(`${API_URL}/ai/undo`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ undoToken })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to undo AI action');
+    }
+    return res.json();
   }
 };
