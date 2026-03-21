@@ -11,6 +11,7 @@ export interface AiContext {
   childProfileId?: number;
   sessionId?: number;
   timeRange?: '7d' | '30d' | '90d' | 'all';
+  confirmedMedicalWrite?: boolean;
 }
 
 export interface AiAction {

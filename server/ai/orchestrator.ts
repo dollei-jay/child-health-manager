@@ -65,7 +65,8 @@ export class AiOrchestrator {
       const result = await this.tools.execute(envelope.functionCall.name, envelope.functionCall.arguments || {}, {
         userId: input.context.userId,
         childProfileId: input.context.childProfileId,
-        sessionId: input.context.sessionId
+        sessionId: input.context.sessionId,
+        confirmedMedicalWrite: Boolean(input.context.confirmedMedicalWrite)
       });
 
       actions.push({
@@ -125,7 +126,8 @@ export class AiOrchestrator {
     const result = await this.tools.execute(fc.name, fc.arguments || {}, {
       userId: input.context.userId,
       childProfileId: input.context.childProfileId,
-      sessionId: input.context.sessionId
+      sessionId: input.context.sessionId,
+      confirmedMedicalWrite: Boolean(input.context.confirmedMedicalWrite)
     });
 
     actions.push({
