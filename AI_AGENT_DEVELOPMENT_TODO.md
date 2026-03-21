@@ -24,8 +24,8 @@
 
 ## 当前状态（Doing）
 
-- 当前阶段：**Phase 1 - 蓝图与边界固化**
-- 当前任务：`P1-T1`（补齐规则蓝图正式文档）
+- 当前阶段：**Phase 2 - 后端最小闭环开发**
+- 当前任务：`P2-T1`（AI Orchestrator 基座）
 - 阻塞项：无
 - 风险项：无
 
@@ -33,10 +33,10 @@
 
 ## 下一步（Next）
 
-1. 补齐 `01-boundary-rules-v1.md`
-2. 汇总 Phase 1 文档并打包推送
-3. Phase 1 收口复核（规则/数据/API/风险一致性）
-4. 进入 `Phase 2` 最小闭环开发（ai/chat + tool 调用）
+1. 启动 `P2-T1`：搭建 AI 服务目录与 orchestrator 骨架
+2. 启动 `P2-T2`：实现 `/api/ai/chat` 最小可用入口
+3. 打通首个 function calling（update_growth）
+4. 增加 ai_ops_log 写入与回执结构
 
 ---
 
@@ -77,8 +77,8 @@
 - [x] 定义统一免责声明模板
 
 **Phase 1 验收标准**
-- [ ] 有完整文档可直接指导开发（规则、数据、接口、风险）
-- [ ] 董事长可一眼看出：可自动执行什么、何时必须确认
+- [x] 有完整文档可直接指导开发（规则、数据、接口、风险）
+- [x] 董事长可一眼看出：可自动执行什么、何时必须确认
 
 **预计成果路径**
 - `/home/dollei/.openclaw/workspace-itops/child-health-manager/docs/ai-agent/01-boundary-rules-v1.md`
@@ -214,8 +214,7 @@
 - `docs/ai-agent/02-data-api-spec-v1.md`
 - `docs/ai-agent/03-write-policy-matrix-v1.md`
 - `docs/ai-agent/04-risk-guardrails-v1.md`
-- 待新增：
-  - `docs/ai-agent/01-boundary-rules-v1.md`
+- `docs/ai-agent/01-boundary-rules-v1.md`
 
 ---
 
@@ -228,4 +227,5 @@
 - [x] 完成数据模型/API清单 v1
 - [x] 完成写库权限矩阵 v1
 - [x] 完成医疗边界与风险护栏 v1
+- [x] 完成规则蓝图正式文档 v1（Phase 1 文档集齐）
 
