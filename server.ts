@@ -1762,6 +1762,109 @@ async function startServer() {
     }
   });
 
+  // AI Undo (Phase 2)
+  app.post('/api/ai/undo', authenticateToken, async (req: any, res) => {
+    const undoToken = String(req.body?.undoToken || '').trim();
+    if (!undoToken) {
+      return res.status(400).json({ error: 'undoToken is required' });
+    }
+
+    try {
+      const opRow = await new Promise<any>((resolve, reject) => {
+        db.get(
+          `SELECT id, opType, targetTable, targetId, undoable, undoneAt
+           FROM ai_ops_log
+           WHERE userId = ? AND undoToken = ?
+           ORDER BY id DESC LIMIT 1`,
+          [req.user.id, undoToken],
+          (err: any, row: any) => {
+            if (err) return reject(err);
+            resolve(row || null);
+          }
+        );
+      });
+
+      if (!opRow) {
+        return res.status(404).json({ error: 'undo target not found' });
+      }
+
+      if (Number(opRow.undoable) !== 1 || opRow.undoneAt) {
+        return res.status(409).json({ error: 'operation already undone or not undoable' });
+      }
+
+      const targetTable = String(opRow.targetTable || '').trim();
+      const targetId = Number(opRow.targetId);
+      if (!targetTable || !Number.isFinite(targetId) || targetId <= 0) {
+        return res.status(400).json({ error: 'invalid undo target' });
+      }
+
+      if (targetTable === 'growth_records') {
+        await new Promise<void>((resolve, reject) => {
+          db.run(`DELETE FROM growth_records WHERE id = ? AND userId = ?`, [targetId, req.user.id], function (err: any) {
+            if (err) return reject(err);
+            if (!this.changes) return reject(new Error('growth record not found'));
+            resolve();
+          });
+        });
+      } else if (targetTable === 'todos') {
+        await new Promise<void>((resolve, reject) => {
+          db.run(`DELETE FROM todos WHERE id = ? AND userId = ?`, [targetId, req.user.id], function (err: any) {
+            if (err) return reject(err);
+            if (!this.changes) return reject(new Error('todo not found'));
+            resolve();
+          });
+        });
+      } else if (targetTable === 'diagnosis_records') {
+        await new Promise<void>((resolve, reject) => {
+          db.run(`DELETE FROM diagnosis_records WHERE id = ? AND userId = ?`, [targetId, req.user.id], function (err: any) {
+            if (err) return reject(err);
+            if (!this.changes) return reject(new Error('diagnosis record not found'));
+            resolve();
+          });
+        });
+      } else {
+        return res.status(400).json({ error: `undo not supported for table: ${targetTable}` });
+      }
+
+      const nowIso = new Date().toISOString();
+      await new Promise<void>((resolve, reject) => {
+        db.run(
+          `UPDATE ai_ops_log SET undoneAt = ?, undoable = 0 WHERE id = ?`,
+          [nowIso, opRow.id],
+          (err: any) => {
+            if (err) return reject(err);
+            resolve();
+          }
+        );
+      });
+
+      logAudit(db, {
+        userId: req.user.id,
+        action: 'ai.undo',
+        status: 'success',
+        ip: getClientIp(req),
+        detail: `undoToken=${undoToken}, table=${targetTable}, targetId=${targetId}`
+      });
+
+      return res.json({
+        success: true,
+        summary: `已撤销操作：${opRow.opType}`,
+        targetTable,
+        targetId,
+        undoneAt: nowIso
+      });
+    } catch (err: any) {
+      logAudit(db, {
+        userId: req.user.id,
+        action: 'ai.undo',
+        status: 'fail',
+        ip: getClientIp(req),
+        detail: String(err?.message || err)
+      });
+      return res.status(500).json({ error: err.message || 'undo failed' });
+    }
+  });
+
   // CSV Export
   app.get('/api/export/csv', authenticateToken, async (req: any, res) => {
     const type = String(req.query.type || '').trim();
