@@ -234,6 +234,25 @@ async function startServer() {
         toolPayload TEXT,
         createdAt TEXT
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS ai_ops_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        childProfileId INTEGER,
+        sessionId INTEGER,
+        opType TEXT NOT NULL,
+        targetTable TEXT,
+        targetId INTEGER,
+        actionPayload TEXT,
+        beforeSnapshot TEXT,
+        afterSnapshot TEXT,
+        undoToken TEXT,
+        undoable INTEGER DEFAULT 1,
+        riskLevel TEXT DEFAULT 'low',
+        confirmedByUser INTEGER DEFAULT 0,
+        createdAt TEXT,
+        undoneAt TEXT
+      )`);
       });
     }
   });
@@ -386,7 +405,141 @@ async function startServer() {
     return String(hash);
   };
 
-  const aiOrchestrator = createAiOrchestrator();
+  const createUndoToken = () => `undo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const logAiOp = (payload: {
+    userId: number;
+    childProfileId?: number | null;
+    sessionId?: number | null;
+    opType: string;
+    targetTable?: string;
+    targetId?: number | null;
+    actionPayload?: any;
+    beforeSnapshot?: any;
+    afterSnapshot?: any;
+    undoToken?: string;
+    riskLevel?: 'low' | 'medium' | 'high';
+  }) => {
+    const nowIso = new Date().toISOString();
+    db.run(
+      `INSERT INTO ai_ops_log (userId, childProfileId, sessionId, opType, targetTable, targetId, actionPayload, beforeSnapshot, afterSnapshot, undoToken, undoable, riskLevel, confirmedByUser, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?)`,
+      [
+        payload.userId,
+        payload.childProfileId ?? null,
+        payload.sessionId ?? null,
+        payload.opType,
+        payload.targetTable || null,
+        payload.targetId ?? null,
+        JSON.stringify(payload.actionPayload || {}),
+        payload.beforeSnapshot ? JSON.stringify(payload.beforeSnapshot) : null,
+        payload.afterSnapshot ? JSON.stringify(payload.afterSnapshot) : null,
+        payload.undoToken || null,
+        payload.riskLevel || 'low',
+        nowIso
+      ],
+      () => {}
+    );
+  };
+
+  const aiOrchestrator = createAiOrchestrator({
+    persistGrowth: async (input, context) => {
+      const childId = context.childProfileId || (await getSelectedChildId(context.userId));
+      if (!childId) {
+        throw new Error('No child profile selected');
+      }
+
+      const bmiValue = input.heightCm > 0 ? Number((input.weightKg / Math.pow(input.heightCm / 100, 2)).toFixed(1)) : null;
+      const createdAt = new Date().toISOString();
+      const undoToken = createUndoToken();
+
+      const insertId = await new Promise<number>((resolve, reject) => {
+        db.run(
+          `INSERT INTO growth_records (userId, childProfileId, date, height, weight, bmi, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [context.userId, childId, input.measuredAt, input.heightCm, input.weightKg, bmiValue, createdAt],
+          function (err: any) {
+            if (err) return reject(err);
+            resolve(Number(this.lastID));
+          }
+        );
+      });
+
+      logAiOp({
+        userId: context.userId,
+        childProfileId: childId,
+        sessionId: context.sessionId ?? null,
+        opType: 'write_growth',
+        targetTable: 'growth_records',
+        targetId: insertId,
+        actionPayload: input,
+        afterSnapshot: {
+          id: insertId,
+          date: input.measuredAt,
+          height: input.heightCm,
+          weight: input.weightKg,
+          bmi: bmiValue
+        },
+        undoToken,
+        riskLevel: 'low'
+      });
+
+      return {
+        accepted: true,
+        targetTable: 'growth_records',
+        targetId: insertId,
+        undoToken,
+        summary: `已记录身高${input.heightCm}cm、体重${input.weightKg}kg（BMI ${bmiValue}）`
+      };
+    },
+    persistTodo: async (input, context) => {
+      const childId = context.childProfileId || (await getSelectedChildId(context.userId));
+      if (!childId) {
+        throw new Error('No child profile selected');
+      }
+
+      const createdAt = new Date().toISOString();
+      const undoToken = createUndoToken();
+
+      const insertId = await new Promise<number>((resolve, reject) => {
+        db.run(
+          `INSERT INTO todos (userId, childProfileId, text, completed, priority, dueDate, createdAt)
+           VALUES (?, ?, ?, 0, ?, ?, ?)`,
+          [context.userId, childId, input.text, input.priority, input.dueDate, createdAt],
+          function (err: any) {
+            if (err) return reject(err);
+            resolve(Number(this.lastID));
+          }
+        );
+      });
+
+      logAiOp({
+        userId: context.userId,
+        childProfileId: childId,
+        sessionId: context.sessionId ?? null,
+        opType: 'write_todo',
+        targetTable: 'todos',
+        targetId: insertId,
+        actionPayload: input,
+        afterSnapshot: {
+          id: insertId,
+          text: input.text,
+          priority: input.priority,
+          dueDate: input.dueDate
+        },
+        undoToken,
+        riskLevel: 'low'
+      });
+
+      return {
+        accepted: true,
+        targetTable: 'todos',
+        targetId: insertId,
+        undoToken,
+        summary: `已新增待办：${input.text}`
+      };
+    }
+  });
 
   const getSelectedChildId = (userId: number): Promise<number | null> => {
     return new Promise((resolve, reject) => {
@@ -1482,23 +1635,38 @@ async function startServer() {
         );
       });
 
-      const reply = await aiOrchestrator.chat({
-        context: {
-          userId: req.user.id,
-          childProfileId,
-          sessionId: resolvedSessionId,
-          timeRange: req.body?.timeRange
-        },
-        messages: [
-          ...history
-            .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
-            .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
-          {
-            role: 'user',
-            content: message
+      const context = {
+        userId: req.user.id,
+        childProfileId,
+        sessionId: resolvedSessionId,
+        timeRange: req.body?.timeRange
+      };
+
+      const directFunctionCall = req.body?.functionCall && typeof req.body.functionCall?.name === 'string'
+        ? {
+            name: String(req.body.functionCall.name),
+            arguments: typeof req.body.functionCall.arguments === 'object' ? req.body.functionCall.arguments : {}
           }
-        ]
-      });
+        : null;
+
+      const reply = directFunctionCall
+        ? await aiOrchestrator.runFunctionCall({
+            context,
+            functionCall: directFunctionCall,
+            answer: message || '已执行函数调用。'
+          })
+        : await aiOrchestrator.chat({
+            context,
+            messages: [
+              ...history
+                .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
+                .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
+              {
+                role: 'user',
+                content: message
+              }
+            ]
+          });
 
       await new Promise<void>((resolve, reject) => {
         db.run(

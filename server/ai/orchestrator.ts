@@ -1,5 +1,5 @@
 import { createModelClient } from './model.js';
-import { createDefaultToolRegistry, ToolRegistry } from './tools.js';
+import { createDefaultToolRegistry, ToolAdapters, ToolRegistry } from './tools.js';
 import { AiAction, AiContext, AiMessage, AiReply, ModelClient } from './types.js';
 
 const stripCodeFence = (text: string) => {
@@ -71,7 +71,7 @@ export class AiOrchestrator {
       actions.push({
         type: envelope.functionCall.name,
         status: 'done',
-        summary: '函数调用已执行（P2-T2最小闭环）'
+        summary: '函数调用已执行'
       });
 
       return {
@@ -90,15 +90,66 @@ export class AiOrchestrator {
     }
 
     return {
-      summary: '已完成AI最小应答（P2-T2）',
+      summary: '已完成AI应答（无工具调用）',
       assistant: envelope.answer,
       actions,
       cards: [],
       riskLevel: 'low'
     };
   }
+
+  async runFunctionCall(input: {
+    context: AiContext;
+    functionCall: { name: string; arguments?: Record<string, any> };
+    answer?: string;
+  }): Promise<AiReply> {
+    const actions: AiAction[] = [];
+
+    const fc = input.functionCall;
+    if (!fc?.name || !this.tools.has(fc.name)) {
+      return {
+        summary: '函数调用无效或不在白名单',
+        assistant: input.answer || '函数调用无效或不在白名单。',
+        actions: [
+          {
+            type: fc?.name || 'unknown',
+            status: 'blocked',
+            reason: 'tool not allowed'
+          }
+        ],
+        cards: [],
+        riskLevel: 'medium'
+      };
+    }
+
+    const result = await this.tools.execute(fc.name, fc.arguments || {}, {
+      userId: input.context.userId,
+      childProfileId: input.context.childProfileId,
+      sessionId: input.context.sessionId
+    });
+
+    actions.push({
+      type: fc.name,
+      status: 'done',
+      summary: '函数调用已执行'
+    });
+
+    return {
+      summary: '已执行指定函数调用',
+      assistant: input.answer || '已按你的指令完成执行。',
+      actions,
+      cards: [
+        {
+          type: 'ai_tool_result',
+          title: '函数执行结果',
+          data: result
+        }
+      ],
+      riskLevel: 'low'
+    };
+  }
 }
 
-export const createAiOrchestrator = () => {
-  return new AiOrchestrator(createModelClient(), createDefaultToolRegistry());
+export const createAiOrchestrator = (adapters: ToolAdapters = {}) => {
+  return new AiOrchestrator(createModelClient(), createDefaultToolRegistry(adapters));
 };

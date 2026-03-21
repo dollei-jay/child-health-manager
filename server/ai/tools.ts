@@ -56,7 +56,25 @@ const validateGrowthInput = (input: any) => {
   };
 };
 
-export const createDefaultToolRegistry = () => {
+const validateTodoInput = (input: any) => {
+  const text = String(input?.text || '').trim();
+  const priorityRaw = String(input?.priority || 'medium').trim().toLowerCase();
+  const priority = ['low', 'medium', 'high'].includes(priorityRaw) ? priorityRaw : 'medium';
+  const dueDate = input?.dueDate ? String(input.dueDate).slice(0, 10) : null;
+
+  if (!text) {
+    throw new Error('add_todo requires non-empty text');
+  }
+
+  return { text: text.slice(0, 200), priority, dueDate };
+};
+
+export interface ToolAdapters {
+  persistGrowth?: (input: { heightCm: number; weightKg: number; measuredAt: string }, context: ToolExecutionContext) => Promise<any>;
+  persistTodo?: (input: { text: string; priority: string; dueDate: string | null }, context: ToolExecutionContext) => Promise<any>;
+}
+
+export const createDefaultToolRegistry = (adapters: ToolAdapters = {}) => {
   const registry = new ToolRegistry();
 
   registry.register({
@@ -66,7 +84,7 @@ export const createDefaultToolRegistry = () => {
       return {
         userId: context.userId,
         childProfileId: context.childProfileId ?? null,
-        note: 'placeholder: wire real db query in P2-T3'
+        note: 'placeholder: wire richer child context later'
       };
     }
   });
@@ -77,14 +95,32 @@ export const createDefaultToolRegistry = () => {
     riskLevel: 'low',
     async execute(input, context) {
       const normalized = validateGrowthInput(input);
+      if (adapters.persistGrowth) {
+        return adapters.persistGrowth(normalized, context);
+      }
       return {
         accepted: true,
         input: normalized,
-        context: {
-          userId: context.userId,
-          childProfileId: context.childProfileId ?? null
-        },
-        note: 'placeholder write success: real DB write will be implemented in P2-T3'
+        context,
+        note: 'placeholder write success: adapter not configured'
+      };
+    }
+  });
+
+  registry.register({
+    name: 'add_todo',
+    description: 'Add a todo item with priority and optional due date.',
+    riskLevel: 'low',
+    async execute(input, context) {
+      const normalized = validateTodoInput(input);
+      if (adapters.persistTodo) {
+        return adapters.persistTodo(normalized, context);
+      }
+      return {
+        accepted: true,
+        input: normalized,
+        context,
+        note: 'placeholder write success: adapter not configured'
       };
     }
   });
