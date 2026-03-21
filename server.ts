@@ -213,6 +213,27 @@ async function startServer() {
         updatedAt TEXT,
         UNIQUE(userId, childProfileId, reminderType, reminderHash)
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS ai_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        childProfileId INTEGER,
+        title TEXT,
+        status TEXT DEFAULT 'active',
+        lastMessageAt TEXT,
+        createdAt TEXT,
+        updatedAt TEXT
+      )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sessionId INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        toolName TEXT,
+        toolPayload TEXT,
+        createdAt TEXT
+      )`);
       });
     }
   });
@@ -1404,14 +1425,74 @@ async function startServer() {
         ? reqChildProfileIdRaw
         : selectedChildId || undefined;
 
+      const nowIso = new Date().toISOString();
+
+      const resolvedSessionId = await new Promise<number>((resolve, reject) => {
+        if (Number.isFinite(sessionIdRaw) && sessionIdRaw > 0) {
+          db.get(
+            `SELECT id FROM ai_sessions WHERE id = ? AND userId = ?`,
+            [sessionIdRaw, req.user.id],
+            (err: any, row: any) => {
+              if (err) return reject(err);
+              if (!row?.id) return reject(new Error('AI session not found'));
+
+              db.run(
+                `UPDATE ai_sessions SET childProfileId = ?, updatedAt = ?, lastMessageAt = ? WHERE id = ?`,
+                [childProfileId || null, nowIso, nowIso, sessionIdRaw],
+                (updateErr: any) => {
+                  if (updateErr) return reject(updateErr);
+                  return resolve(Number(sessionIdRaw));
+                }
+              );
+            }
+          );
+          return;
+        }
+
+        db.run(
+          `INSERT INTO ai_sessions (userId, childProfileId, title, status, lastMessageAt, createdAt, updatedAt)
+           VALUES (?, ?, ?, 'active', ?, ?, ?)`,
+          [req.user.id, childProfileId || null, 'AI会话', nowIso, nowIso, nowIso],
+          function (err: any) {
+            if (err) return reject(err);
+            return resolve(Number(this.lastID));
+          }
+        );
+      });
+
+      const history = await new Promise<any[]>((resolve, reject) => {
+        db.all(
+          `SELECT role, content FROM ai_messages WHERE sessionId = ? ORDER BY id DESC LIMIT 12`,
+          [resolvedSessionId],
+          (err: any, rows: any[]) => {
+            if (err) return reject(err);
+            return resolve((rows || []).reverse());
+          }
+        );
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        db.run(
+          `INSERT INTO ai_messages (sessionId, role, content, createdAt) VALUES (?, 'user', ?, ?)`,
+          [resolvedSessionId, message, nowIso],
+          (err: any) => {
+            if (err) return reject(err);
+            resolve();
+          }
+        );
+      });
+
       const reply = await aiOrchestrator.chat({
         context: {
           userId: req.user.id,
           childProfileId,
-          sessionId: Number.isFinite(sessionIdRaw) ? sessionIdRaw : undefined,
+          sessionId: resolvedSessionId,
           timeRange: req.body?.timeRange
         },
         messages: [
+          ...history
+            .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
+            .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
           {
             role: 'user',
             content: message
@@ -1419,8 +1500,19 @@ async function startServer() {
         ]
       });
 
+      await new Promise<void>((resolve, reject) => {
+        db.run(
+          `INSERT INTO ai_messages (sessionId, role, content, createdAt) VALUES (?, 'assistant', ?, ?)`,
+          [resolvedSessionId, String(reply.assistant || ''), new Date().toISOString()],
+          (err: any) => {
+            if (err) return reject(err);
+            resolve();
+          }
+        );
+      });
+
       return res.json({
-        sessionId: Number.isFinite(sessionIdRaw) ? sessionIdRaw : null,
+        sessionId: resolvedSessionId,
         ...reply
       });
     } catch (err: any) {
