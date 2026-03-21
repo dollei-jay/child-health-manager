@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import { createRequire } from 'module';
+import { createAiOrchestrator } from './server/ai/index.js';
 
 fs.writeFileSync('trace.log', 'File loaded.\n');
 
@@ -363,6 +364,8 @@ async function startServer() {
     }
     return String(hash);
   };
+
+  const aiOrchestrator = createAiOrchestrator();
 
   const getSelectedChildId = (userId: number): Promise<number | null> => {
     return new Promise((resolve, reject) => {
@@ -1382,6 +1385,46 @@ async function startServer() {
       );
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'failed to snooze reminder' });
+    }
+  });
+
+  // AI Chat (Phase 2 MVP)
+  app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
+    const message = String(req.body?.message || '').trim();
+    const sessionIdRaw = Number(req.body?.sessionId);
+    const reqChildProfileIdRaw = Number(req.body?.childProfileId);
+
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    try {
+      const selectedChildId = await getSelectedChildId(req.user.id);
+      const childProfileId = Number.isFinite(reqChildProfileIdRaw) && reqChildProfileIdRaw > 0
+        ? reqChildProfileIdRaw
+        : selectedChildId || undefined;
+
+      const reply = await aiOrchestrator.chat({
+        context: {
+          userId: req.user.id,
+          childProfileId,
+          sessionId: Number.isFinite(sessionIdRaw) ? sessionIdRaw : undefined,
+          timeRange: req.body?.timeRange
+        },
+        messages: [
+          {
+            role: 'user',
+            content: message
+          }
+        ]
+      });
+
+      return res.json({
+        sessionId: Number.isFinite(sessionIdRaw) ? sessionIdRaw : null,
+        ...reply
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'ai chat failed' });
     }
   });
 

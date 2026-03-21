@@ -25,7 +25,7 @@
 ## 当前状态（Doing）
 
 - 当前阶段：**Phase 2 - 后端最小闭环开发**
-- 当前任务：`P2-T2`（`/api/ai/chat` 最小可用入口）
+- 当前任务：`P2-T2`（补齐多轮上下文）
 - 阻塞项：无
 - 风险项：无
 
@@ -33,10 +33,10 @@
 
 ## 下一步（Next）
 
-1. 启动 `P2-T2`：实现 `/api/ai/chat` 最小可用入口
-2. 打通首个 function calling（update_growth）
+1. 补齐 `P2-T2` 多轮上下文（session message 存取）
+2. 启动 `P2-T3`：实现真实写库执行器（growth/todo）
 3. 增加 ai_ops_log 写入与回执结构
-4. 启动 `P2-T3`：实现真实写库执行器
+4. 启动 `P2-T4`：撤销 token 机制
 
 ---
 
@@ -96,9 +96,9 @@
 
 ### P2-T2 `/api/ai/chat` 主入口
 - [ ] 支持多轮上下文（当前孩子 + 时间范围）
-- [ ] 支持 tool calling（只允许白名单工具）
-- [ ] 引入 Function Calling 标准动作指令（如 `update_weight` / `add_todo`）并做参数校验
-- [ ] 返回结构化回执（做了什么、写了什么、建议什么）
+- [x] 支持 tool calling（只允许白名单工具）
+- [x] 引入 Function Calling 标准动作指令（如 `update_weight` / `add_todo`）并做参数校验
+- [x] 返回结构化回执（做了什么、写了什么、建议什么）
 
 ### P2-T3 写库执行器
 - [ ] 实现身高体重自动录入工具
@@ -220,6 +220,7 @@
 - `server/ai/model.ts`
 - `server/ai/orchestrator.ts`
 - `server/ai/index.ts`
+- `server.ts`（新增 `/api/ai/chat`）
 
 ---
 
@@ -234,4 +235,5 @@
 - [x] 完成医疗边界与风险护栏 v1
 - [x] 完成规则蓝图正式文档 v1（Phase 1 文档集齐）
 - [x] 完成 P2-T1：AI Orchestrator 基座（server/ai 模块）
+- [x] 完成 P2-T2（MVP）：`/api/ai/chat` + Function Calling 最小闭环
 

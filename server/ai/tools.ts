@@ -28,6 +28,34 @@ export class ToolRegistry {
   }
 }
 
+const asNumber = (value: any) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const validateGrowthInput = (input: any) => {
+  const heightCm = asNumber(input?.heightCm);
+  const weightKg = asNumber(input?.weightKg);
+
+  if (heightCm === null || weightKg === null) {
+    throw new Error('update_growth requires numeric heightCm and weightKg');
+  }
+
+  if (heightCm < 30 || heightCm > 250) {
+    throw new Error('heightCm out of valid range (30-250)');
+  }
+
+  if (weightKg < 2 || weightKg > 250) {
+    throw new Error('weightKg out of valid range (2-250)');
+  }
+
+  return {
+    heightCm: Number(heightCm.toFixed(1)),
+    weightKg: Number(weightKg.toFixed(1)),
+    measuredAt: String(input?.measuredAt || new Date().toISOString().slice(0, 10))
+  };
+};
+
 export const createDefaultToolRegistry = () => {
   const registry = new ToolRegistry();
 
@@ -38,7 +66,7 @@ export const createDefaultToolRegistry = () => {
       return {
         userId: context.userId,
         childProfileId: context.childProfileId ?? null,
-        note: 'placeholder: wire real db query in P2-T2/P2-T3'
+        note: 'placeholder: wire real db query in P2-T3'
       };
     }
   });
@@ -47,11 +75,16 @@ export const createDefaultToolRegistry = () => {
     name: 'update_growth',
     description: 'Write growth record (height/weight) after schema validation.',
     riskLevel: 'low',
-    async execute(input) {
+    async execute(input, context) {
+      const normalized = validateGrowthInput(input);
       return {
         accepted: true,
-        input,
-        note: 'placeholder: wire real write in P2-T3'
+        input: normalized,
+        context: {
+          userId: context.userId,
+          childProfileId: context.childProfileId ?? null
+        },
+        note: 'placeholder write success: real DB write will be implemented in P2-T3'
       };
     }
   });
