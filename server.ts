@@ -253,6 +253,21 @@ async function startServer() {
         createdAt TEXT,
         undoneAt TEXT
       )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS diagnosis_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        childProfileId INTEGER NOT NULL,
+        visitDate TEXT,
+        hospital TEXT,
+        doctorName TEXT,
+        diagnosisText TEXT NOT NULL,
+        adviceText TEXT,
+        riskFlag TEXT DEFAULT 'normal',
+        source TEXT DEFAULT 'manual',
+        createdAt TEXT,
+        updatedAt TEXT
+      )`);
       });
     }
   });
@@ -537,6 +552,64 @@ async function startServer() {
         targetId: insertId,
         undoToken,
         summary: `已新增待办：${input.text}`
+      };
+    },
+    persistDiagnosis: async (input, context) => {
+      const childId = context.childProfileId || (await getSelectedChildId(context.userId));
+      if (!childId) {
+        throw new Error('No child profile selected');
+      }
+
+      const createdAt = new Date().toISOString();
+      const undoToken = createUndoToken();
+
+      const insertId = await new Promise<number>((resolve, reject) => {
+        db.run(
+          `INSERT INTO diagnosis_records (userId, childProfileId, visitDate, hospital, doctorName, diagnosisText, adviceText, riskFlag, source, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ai', ?, ?)`,
+          [
+            context.userId,
+            childId,
+            input.visitDate,
+            input.hospital,
+            input.doctorName,
+            input.diagnosisText,
+            input.adviceText,
+            input.riskFlag,
+            createdAt,
+            createdAt
+          ],
+          function (err: any) {
+            if (err) return reject(err);
+            resolve(Number(this.lastID));
+          }
+        );
+      });
+
+      logAiOp({
+        userId: context.userId,
+        childProfileId: childId,
+        sessionId: context.sessionId ?? null,
+        opType: 'write_diagnosis',
+        targetTable: 'diagnosis_records',
+        targetId: insertId,
+        actionPayload: input,
+        afterSnapshot: {
+          id: insertId,
+          diagnosisText: input.diagnosisText,
+          adviceText: input.adviceText,
+          riskFlag: input.riskFlag
+        },
+        undoToken,
+        riskLevel: input.riskFlag === 'critical' ? 'high' : 'medium'
+      });
+
+      return {
+        accepted: true,
+        targetTable: 'diagnosis_records',
+        targetId: insertId,
+        undoToken,
+        summary: '已写入诊断记录（医疗相关）'
       };
     }
   });
@@ -1639,7 +1712,8 @@ async function startServer() {
         userId: req.user.id,
         childProfileId,
         sessionId: resolvedSessionId,
-        timeRange: req.body?.timeRange
+        timeRange: req.body?.timeRange,
+        confirmedMedicalWrite: Boolean(req.body?.confirmMedicalWrite)
       };
 
       const directFunctionCall = req.body?.functionCall && typeof req.body.functionCall?.name === 'string'

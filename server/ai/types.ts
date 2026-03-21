@@ -41,6 +41,7 @@ export interface ToolExecutionContext {
   userId: number;
   childProfileId?: number;
   sessionId?: number;
+  confirmedMedicalWrite?: boolean;
 }
 
 export interface ToolDefinition<TInput = any, TResult = any> {

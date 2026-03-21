@@ -69,9 +69,46 @@ const validateTodoInput = (input: any) => {
   return { text: text.slice(0, 200), priority, dueDate };
 };
 
+const validateDiagnosisInput = (input: any) => {
+  const diagnosisText = String(input?.diagnosisText || '').trim();
+  const adviceText = String(input?.adviceText || '').trim();
+  const hospital = String(input?.hospital || '').trim();
+  const doctorName = String(input?.doctorName || '').trim();
+  const visitDate = input?.visitDate ? String(input.visitDate).slice(0, 10) : null;
+
+  const riskRaw = String(input?.riskFlag || 'normal').trim().toLowerCase();
+  const riskFlag = ['normal', 'warning', 'critical'].includes(riskRaw)
+    ? (riskRaw as 'normal' | 'warning' | 'critical')
+    : 'normal';
+
+  if (!diagnosisText) {
+    throw new Error('add_diagnosis requires diagnosisText');
+  }
+
+  return {
+    visitDate,
+    hospital: hospital.slice(0, 80),
+    doctorName: doctorName.slice(0, 40),
+    diagnosisText: diagnosisText.slice(0, 500),
+    adviceText: adviceText.slice(0, 500),
+    riskFlag
+  };
+};
+
 export interface ToolAdapters {
   persistGrowth?: (input: { heightCm: number; weightKg: number; measuredAt: string }, context: ToolExecutionContext) => Promise<any>;
   persistTodo?: (input: { text: string; priority: string; dueDate: string | null }, context: ToolExecutionContext) => Promise<any>;
+  persistDiagnosis?: (
+    input: {
+      visitDate: string | null;
+      hospital: string;
+      doctorName: string;
+      diagnosisText: string;
+      adviceText: string;
+      riskFlag: 'normal' | 'warning' | 'critical';
+    },
+    context: ToolExecutionContext
+  ) => Promise<any>;
 }
 
 export const createDefaultToolRegistry = (adapters: ToolAdapters = {}) => {
@@ -121,6 +158,34 @@ export const createDefaultToolRegistry = (adapters: ToolAdapters = {}) => {
         input: normalized,
         context,
         note: 'placeholder write success: adapter not configured'
+      };
+    }
+  });
+
+  registry.register({
+    name: 'add_diagnosis',
+    description: 'Add diagnosis/advice record. Medical write requires confirmation.',
+    riskLevel: 'high',
+    async execute(input, context) {
+      const normalized = validateDiagnosisInput(input);
+      if (!context.confirmedMedicalWrite) {
+        return {
+          accepted: false,
+          pendingConfirm: true,
+          reason: 'medical write requires confirmation',
+          input: normalized
+        };
+      }
+
+      if (adapters.persistDiagnosis) {
+        return adapters.persistDiagnosis(normalized, context);
+      }
+
+      return {
+        accepted: true,
+        input: normalized,
+        context,
+        note: 'placeholder diagnosis write success: adapter not configured'
       };
     }
   });
