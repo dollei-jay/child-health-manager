@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { groceryList as defaultList } from '../data';
-import { Leaf, Egg, Wheat, Cherry, Edit2, Save, X } from 'lucide-react';
+import { Leaf, Egg, Wheat, Cherry, Edit2, Save, X, Sparkles } from 'lucide-react';
 import { api, getToken } from '../api';
 
 export default function GroceryList() {
@@ -34,12 +34,40 @@ export default function GroceryList() {
     fetchList();
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      loadAiPurchaseSuggestion();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, isAuthenticated]);
+
   const saveListToFirebase = async (newListData: any) => {
     if (!isAuthenticated) return;
     try {
       await api.saveGroceryList(JSON.stringify(newListData));
     } catch (error) {
       console.error("Error saving grocery list data:", error);
+    }
+  };
+
+  const [aiPurchaseSuggestion, setAiPurchaseSuggestion] = useState<any | null>(null);
+  const [aiPurchaseLoading, setAiPurchaseLoading] = useState(false);
+  const [aiPurchaseError, setAiPurchaseError] = useState('');
+  const [applyLoading, setApplyLoading] = useState(false);
+
+  const loadAiPurchaseSuggestion = async () => {
+    if (!isAuthenticated) return;
+    setAiPurchaseLoading(true);
+    setAiPurchaseError('');
+    try {
+      const resp = await api.generateAiPurchase();
+      setAiPurchaseSuggestion(resp || null);
+    } catch (error: any) {
+      console.error('Failed to generate AI purchase suggestion', error);
+      setAiPurchaseError(error?.message || '生成失败');
+      setAiPurchaseSuggestion(null);
+    } finally {
+      setAiPurchaseLoading(false);
     }
   };
 
@@ -62,6 +90,25 @@ export default function GroceryList() {
     setEditForm([]);
   };
 
+  const applyPurchaseSuggestion = async () => {
+    if (applyLoading || !aiPurchaseSuggestion?.mergedListData) return;
+    const ok = window.confirm('确认将“采购建议卡”一键应用到当前清单？');
+    if (!ok) return;
+
+    setApplyLoading(true);
+    try {
+      setListData(aiPurchaseSuggestion.mergedListData as any);
+      await saveListToFirebase(aiPurchaseSuggestion.mergedListData);
+      alert('已应用采购建议。');
+      await loadAiPurchaseSuggestion();
+    } catch (error) {
+      console.error('Failed to apply purchase suggestion', error);
+      alert('应用失败，请稍后重试。');
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="animate-pulse text-center py-10 text-stone-400">加载清单中...</div>;
   }
@@ -76,6 +123,74 @@ export default function GroceryList() {
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-extrabold text-stone-900">一周采购清单</h2>
+
+      <div className="bg-white rounded-3xl border border-amber-100 p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div>
+            <h3 className="text-base font-extrabold text-amber-700 inline-flex items-center gap-2"><Sparkles size={16} /> {aiPurchaseSuggestion?.summary || '采购建议卡'}</h3>
+            {aiPurchaseSuggestion?.rationale && (
+              <p className="text-xs text-stone-500 mt-1">
+                依据：计划运动关键词 {aiPurchaseSuggestion.rationale.highExerciseMentions ?? '-'} 次；当前覆盖 蔬菜{aiPurchaseSuggestion.rationale.currentCoverage?.vegetables ?? 0}/蛋白{aiPurchaseSuggestion.rationale.currentCoverage?.protein ?? 0}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadAiPurchaseSuggestion}
+              disabled={aiPurchaseLoading}
+              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap ${aiPurchaseLoading ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'}`}
+            >
+              {aiPurchaseLoading ? '生成中...' : '重新生成'}
+            </button>
+            <button
+              onClick={applyPurchaseSuggestion}
+              disabled={applyLoading || !aiPurchaseSuggestion?.mergedListData}
+              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap ${(applyLoading || !aiPurchaseSuggestion?.mergedListData) ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+            >
+              {applyLoading ? '应用中...' : '一键应用'}
+            </button>
+          </div>
+        </div>
+
+        {aiPurchaseError ? (
+          <p className="text-sm text-rose-600">建议生成失败：{aiPurchaseError}</p>
+        ) : aiPurchaseLoading && !aiPurchaseSuggestion ? (
+          <p className="text-sm text-stone-500">正在生成建议...</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+              <div className="text-xs font-extrabold text-rose-700 mb-2">必买</div>
+              <ul className="space-y-1.5">
+                {(Array.isArray(aiPurchaseSuggestion?.tiers?.mustBuy) ? aiPurchaseSuggestion.tiers.mustBuy : []).length === 0 ? (
+                  <li className="text-xs text-rose-600">当前覆盖充足，无新增必买项。</li>
+                ) : (
+                  (aiPurchaseSuggestion.tiers.mustBuy || []).map((row: any, idx: number) => (
+                    <li key={idx} className="text-xs text-rose-700">• {row.item}（{row.reason}）</li>
+                  ))
+                )}
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <div className="text-xs font-extrabold text-amber-700 mb-2">建议</div>
+              <ul className="space-y-1.5">
+                {(aiPurchaseSuggestion?.tiers?.recommended || []).map((row: any, idx: number) => (
+                  <li key={idx} className="text-xs text-amber-700">• {row.item}（{row.reason}）</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+              <div className="text-xs font-extrabold text-stone-700 mb-2">可选</div>
+              <ul className="space-y-1.5">
+                {(aiPurchaseSuggestion?.tiers?.optional || []).map((row: any, idx: number) => (
+                  <li key={idx} className="text-xs text-stone-700">• {row.item}（{row.reason}）</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {categories.map(({ id, title, icon: Icon, color }) => {
