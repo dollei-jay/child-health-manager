@@ -335,132 +335,6 @@ async function startServer() {
     }, 0);
   };
 
-  const weekDaySeed = [
-    { id: 'mon', day: '周一' },
-    { id: 'tue', day: '周二' },
-    { id: 'wed', day: '周三' },
-    { id: 'thu', day: '周四' },
-    { id: 'fri', day: '周五' },
-    { id: 'sat', day: '周六' },
-    { id: 'sun', day: '周日' }
-  ];
-
-  const createFallbackPlan = () => {
-    return weekDaySeed.map((d) => ({
-      id: d.id,
-      day: d.day,
-      food: {
-        breakfast: '牛奶 + 鸡蛋 + 全麦主食',
-        lunch: '正常午餐，主食适量',
-        snack: '无糖酸奶/水果',
-        dinner: '优质蛋白 + 深色蔬菜',
-        fruit: '低糖水果 1 份'
-      },
-      exercise: ['中等强度活动 40-60 分钟', '拉伸 10 分钟'],
-      suggestion: '保持作息规律，先执行再复盘'
-    }));
-  };
-
-  const tunePlanByExecution = (basePlan: any[], totalCheckins: number, latestDiagnosisRisk: 'normal' | 'warning' | 'critical') => {
-    const mode = totalCheckins >= 22 ? 'enhance' : totalCheckins >= 10 ? 'standard' : 'recovery';
-
-    return basePlan.map((day: any, idx: number) => {
-      const exercise = Array.isArray(day?.exercise) ? day.exercise.filter((x: any) => String(x || '').trim()) : [];
-      const tunedExercise =
-        mode === 'enhance'
-          ? [...exercise.slice(0, 2), '补充核心/柔韧训练 10 分钟']
-          : mode === 'recovery'
-            ? ['快走 30 分钟', '拉伸 10 分钟']
-            : [...exercise.slice(0, 2), '维持 40-60 分钟稳定活动'];
-
-      let suggestion = idx >= 5 ? '周末优先户外 + 早睡，不安排高糖零食。' : String(day?.suggestion || '保持执行节奏');
-      if (latestDiagnosisRisk === 'warning') suggestion += '（近期有医疗提醒，关注作息和复查）';
-      if (latestDiagnosisRisk === 'critical') suggestion += '（高风险提示：请优先遵医嘱并减少高强度负荷）';
-
-      return {
-        id: day.id,
-        day: day.day,
-        food: day?.food || {},
-        exercise: tunedExercise,
-        suggestion
-      };
-    });
-  };
-
-  const evaluatePlanQuality = (planData: any[]) => {
-    const days = Array.isArray(planData) ? planData : [];
-    if (!days.length) return { score: 0, level: 'low', reasons: ['计划为空'] as string[] };
-
-    let score = 40;
-    const reasons: string[] = [];
-
-    const completeDays = days.filter((d: any) => d?.food && Array.isArray(d?.exercise) && String(d?.suggestion || '').trim()).length;
-    if (completeDays >= 7) {
-      score += 30;
-      reasons.push('7天结构完整');
-    } else {
-      reasons.push(`仅 ${completeDays} 天结构完整`);
-    }
-
-    const exerciseItems = days.reduce((acc: number, d: any) => acc + (Array.isArray(d?.exercise) ? d.exercise.filter((x: any) => String(x || '').trim()).length : 0), 0);
-    if (exerciseItems >= 10) {
-      score += 20;
-      reasons.push('运动项覆盖充足');
-    } else {
-      reasons.push('运动项偏少');
-    }
-
-    const suggestionMentions = days.filter((d: any) => /复查|作息|户外|睡眠|饮食/.test(String(d?.suggestion || ''))).length;
-    if (suggestionMentions >= 4) {
-      score += 10;
-      reasons.push('建议可解释性较好');
-    } else {
-      reasons.push('建议依据信息偏少');
-    }
-
-    const level = score >= 80 ? 'high' : score >= 60 ? 'medium' : 'low';
-    return { score: Math.max(0, Math.min(100, score)), level, reasons };
-  };
-
-  const evaluatePurchaseQuality = (tiers: any) => {
-    const must = Array.isArray(tiers?.mustBuy) ? tiers.mustBuy.length : 0;
-    const rec = Array.isArray(tiers?.recommended) ? tiers.recommended.length : 0;
-    const opt = Array.isArray(tiers?.optional) ? tiers.optional.length : 0;
-
-    let score = 35;
-    const reasons: string[] = [];
-
-    if (must > 0) {
-      score += 25;
-      reasons.push('包含必买清单');
-    } else {
-      reasons.push('缺少必买项');
-    }
-
-    if (rec >= 2) {
-      score += 20;
-      reasons.push('建议项数量达标');
-    } else {
-      reasons.push('建议项不足');
-    }
-
-    if (opt >= 1) {
-      score += 10;
-      reasons.push('包含可选项');
-    }
-
-    const total = must + rec + opt;
-    if (total >= 4) {
-      score += 10;
-      reasons.push('整体覆盖较完整');
-    } else {
-      reasons.push('整体覆盖偏少');
-    }
-
-    const level = score >= 80 ? 'high' : score >= 60 ? 'medium' : 'low';
-    return { score: Math.max(0, Math.min(100, score)), level, reasons };
-  };
-
   // Basic login rate limit (in-memory)
   const LOGIN_WINDOW_MS = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000); // 15 min
   const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_RATE_LIMIT_MAX || 10);
@@ -581,21 +455,6 @@ async function startServer() {
       ],
       () => {}
     );
-  };
-
-  const classifyAiError = (err: any): 'validation' | 'not_found' | 'conflict' | 'permission' | 'runtime' | 'unknown' => {
-    const msg = String(err?.message || err || '').toLowerCase();
-    if (msg.includes('required') || msg.includes('invalid') || msg.includes('range')) return 'validation';
-    if (msg.includes('not found') || msg.includes('not_exist')) return 'not_found';
-    if (msg.includes('already') || msg.includes('conflict')) return 'conflict';
-    if (msg.includes('forbidden') || msg.includes('not allowed') || msg.includes('unauthorized')) return 'permission';
-    if (msg) return 'runtime';
-    return 'unknown';
-  };
-
-  const parseDateSafe = (v: any) => {
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d;
   };
 
   const aiOrchestrator = createAiOrchestrator({
@@ -1778,7 +1637,6 @@ async function startServer() {
 
   // AI Chat (Phase 2 MVP)
   app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
-    const startedAt = Date.now();
     const message = String(req.body?.message || '').trim();
     const sessionIdRaw = Number(req.body?.sessionId);
     const reqChildProfileIdRaw = Number(req.body?.childProfileId);
@@ -1895,37 +1753,17 @@ async function startServer() {
         );
       });
 
-      const durationMs = Date.now() - startedAt;
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.chat',
-        status: 'success',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; sessionId=${resolvedSessionId}; risk=${reply?.riskLevel || 'low'}; actions=${Array.isArray(reply?.actions) ? reply.actions.length : 0}`
-      });
-
       return res.json({
         sessionId: resolvedSessionId,
-        ...reply,
-        meta: { durationMs }
+        ...reply
       });
     } catch (err: any) {
-      const durationMs = Date.now() - startedAt;
-      const category = classifyAiError(err);
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.chat',
-        status: 'fail',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; category=${category}; error=${String(err?.message || err).slice(0, 180)}`
-      });
-      return res.status(500).json({ error: err.message || 'ai chat failed', errorCategory: category, durationMs });
+      return res.status(500).json({ error: err.message || 'ai chat failed' });
     }
   });
 
   // AI Undo (Phase 2)
   app.post('/api/ai/undo', authenticateToken, async (req: any, res) => {
-    const startedAt = Date.now();
     const undoToken = String(req.body?.undoToken || '').trim();
     if (!undoToken) {
       return res.status(400).json({ error: 'undoToken is required' });
@@ -2000,13 +1838,12 @@ async function startServer() {
         );
       });
 
-      const durationMs = Date.now() - startedAt;
       logAudit(db, {
         userId: req.user.id,
         action: 'ai.undo',
         status: 'success',
         ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; undoToken=${undoToken}; table=${targetTable}; targetId=${targetId}`
+        detail: `undoToken=${undoToken}, table=${targetTable}, targetId=${targetId}`
       });
 
       return res.json({
@@ -2014,390 +1851,17 @@ async function startServer() {
         summary: `已撤销操作：${opRow.opType}`,
         targetTable,
         targetId,
-        undoneAt: nowIso,
-        meta: { durationMs }
+        undoneAt: nowIso
       });
     } catch (err: any) {
-      const durationMs = Date.now() - startedAt;
-      const category = classifyAiError(err);
       logAudit(db, {
         userId: req.user.id,
         action: 'ai.undo',
         status: 'fail',
         ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; category=${category}; error=${String(err?.message || err).slice(0, 180)}`
+        detail: String(err?.message || err)
       });
-      return res.status(500).json({ error: err.message || 'undo failed', errorCategory: category, durationMs });
-    }
-  });
-
-  // AI Plan Generator (Phase 4 - P4-T1)
-  app.post('/api/ai/plan/generate', authenticateToken, async (req: any, res) => {
-    const startedAt = Date.now();
-    try {
-      const selectedChildId = await getSelectedChildId(req.user.id);
-      const reqChildProfileId = Number(req.body?.childProfileId);
-      const childProfileId = Number.isFinite(reqChildProfileId) && reqChildProfileId > 0 ? reqChildProfileId : selectedChildId;
-
-      if (!childProfileId) return res.status(400).json({ error: 'No child profile selected' });
-
-      const childExists = await dbGetP(`SELECT id FROM child_profiles WHERE id = ? AND userId = ?`, [childProfileId, req.user.id]);
-      if (!childExists?.id) {
-        return res.status(403).json({ error: 'childProfileId not allowed' });
-      }
-
-      const weeklyPlanRow = await dbGetP(
-        `SELECT planData FROM weekly_plan WHERE userId = ? AND childProfileId = ? LIMIT 1`,
-        [req.user.id, childProfileId]
-      );
-      const checklistRow = await dbGetP(
-        `SELECT checkedItems FROM checklist WHERE userId = ? AND childProfileId = ? LIMIT 1`,
-        [req.user.id, childProfileId]
-      );
-      const diagnosisRow = await dbGetP(
-        `SELECT riskFlag, diagnosisText, adviceText, visitDate FROM diagnosis_records
-         WHERE userId = ? AND childProfileId = ?
-         ORDER BY COALESCE(visitDate, createdAt) DESC, id DESC LIMIT 1`,
-        [req.user.id, childProfileId]
-      );
-
-      const today = startOfDay(new Date());
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(today.getDate() - 6);
-
-      const checklistData = parseMaybeJson(checklistRow?.checkedItems, {});
-      const totalCheckins7d = Object.entries(checklistData).filter(([key, checked]) => {
-        if (!checked || typeof key !== 'string') return false;
-        const d = key.slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
-        const dt = startOfDay(new Date(d));
-        return dt >= sevenDaysAgo && dt <= today;
-      }).length;
-
-      const latestRisk = ['normal', 'warning', 'critical'].includes(String(diagnosisRow?.riskFlag || 'normal'))
-        ? String(diagnosisRow?.riskFlag || 'normal') as 'normal' | 'warning' | 'critical'
-        : 'normal';
-
-      const basePlanRaw = parseMaybeJson(weeklyPlanRow?.planData, null);
-      const basePlan = Array.isArray(basePlanRaw) && basePlanRaw.length ? basePlanRaw : createFallbackPlan();
-      const suggestedPlan = tunePlanByExecution(basePlan, totalCheckins7d, latestRisk);
-
-      let quality = evaluatePlanQuality(suggestedPlan);
-      let finalPlan = suggestedPlan;
-      let fallbackApplied = false;
-
-      if (quality.level === 'low') {
-        finalPlan = tunePlanByExecution(createFallbackPlan(), totalCheckins7d, latestRisk);
-        quality = evaluatePlanQuality(finalPlan);
-        fallbackApplied = true;
-      }
-
-      const tips = [
-        `近7日打卡 ${totalCheckins7d} 次，已按执行率调整下周训练节奏。`,
-        latestRisk === 'critical'
-          ? '检测到高风险医疗标记：建议优先遵医嘱，降低训练负荷。'
-          : latestRisk === 'warning'
-            ? '检测到医疗提醒：建议维持中等节奏并关注复查安排。'
-            : '未检测到高风险医疗标记，建议保持稳定执行。',
-        '输出结构包含：作息/饮食/运动/观察与复查提示，可直接落库。'
-      ];
-
-      const durationMs = Date.now() - startedAt;
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.plan.generate',
-        status: 'success',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; score=${quality.score}; level=${quality.level}; fallback=${fallbackApplied ? 1 : 0}`
-      });
-
-      return res.json({
-        summary: fallbackApplied ? '下周计划建议已生成（已启用模板兜底）' : '下周计划建议已生成',
-        planData: finalPlan,
-        tips,
-        quality,
-        fallbackApplied,
-        structure: {
-          fields: ['food', 'exercise', 'suggestion'],
-          note: '作息与观察/复查建议已融合在 suggestion 字段'
-        },
-        rationale: {
-          childProfileId,
-          totalCheckins7d,
-          latestDiagnosisRisk: latestRisk,
-          latestDiagnosis: diagnosisRow
-            ? {
-                visitDate: diagnosisRow.visitDate || null,
-                diagnosisText: String(diagnosisRow.diagnosisText || '').slice(0, 120),
-                adviceText: String(diagnosisRow.adviceText || '').slice(0, 120)
-              }
-            : null,
-          dataSources: ['weekly_plan', 'checklist', 'diagnosis_records']
-        },
-        generatedAt: new Date().toISOString(),
-        meta: { durationMs }
-      });
-    } catch (err: any) {
-      const durationMs = Date.now() - startedAt;
-      const category = classifyAiError(err);
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.plan.generate',
-        status: 'fail',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; category=${category}; error=${String(err?.message || err).slice(0, 180)}`
-      });
-      return res.status(500).json({ error: err.message || 'failed to generate ai plan', errorCategory: category, durationMs });
-    }
-  });
-
-  // AI Purchase Generator (Phase 4 - P4-T2)
-  app.post('/api/ai/purchase/generate', authenticateToken, async (req: any, res) => {
-    const startedAt = Date.now();
-    try {
-      const selectedChildId = await getSelectedChildId(req.user.id);
-      const reqChildProfileId = Number(req.body?.childProfileId);
-      const childProfileId = Number.isFinite(reqChildProfileId) && reqChildProfileId > 0 ? reqChildProfileId : selectedChildId;
-
-      if (!childProfileId) return res.status(400).json({ error: 'No child profile selected' });
-
-      const childExists = await dbGetP(`SELECT id FROM child_profiles WHERE id = ? AND userId = ?`, [childProfileId, req.user.id]);
-      if (!childExists?.id) {
-        return res.status(403).json({ error: 'childProfileId not allowed' });
-      }
-
-      const weeklyPlanRow = await dbGetP(
-        `SELECT planData FROM weekly_plan WHERE userId = ? AND childProfileId = ? LIMIT 1`,
-        [req.user.id, childProfileId]
-      );
-      const groceryRow = await dbGetP(
-        `SELECT listData FROM grocery_list WHERE userId = ? AND childProfileId = ? LIMIT 1`,
-        [req.user.id, childProfileId]
-      );
-
-      const inputPlanData = Array.isArray(req.body?.planData) ? req.body.planData : null;
-      const planData = inputPlanData || parseMaybeJson(weeklyPlanRow?.planData, createFallbackPlan());
-      const groceryData = parseMaybeJson(groceryRow?.listData, {
-        vegetables: [],
-        protein: [],
-        carbs: [],
-        fruits: []
-      });
-
-      const planText = JSON.stringify(planData || []);
-      const highExercise = (planText.match(/运动|快走|跑|骑|跳|训练|户外/g) || []).length;
-
-      const asArray = (v: any) => (Array.isArray(v) ? v : []);
-      const vegetables = asArray(groceryData.vegetables);
-      const protein = asArray(groceryData.protein);
-      const carbs = asArray(groceryData.carbs);
-      const fruits = asArray(groceryData.fruits);
-
-      const mustBuy: Array<{ item: string; reason: string; relatedPlan: string }> = [];
-      const recommended: Array<{ item: string; reason: string; relatedPlan: string }> = [];
-      const optional: Array<{ item: string; reason: string; relatedPlan: string }> = [];
-
-      if (protein.length < 6 || highExercise >= 10) {
-        mustBuy.push({
-          item: '鸡蛋 10-12个',
-          reason: '保障基础蛋白摄入，支撑本周运动恢复。',
-          relatedPlan: '运动计划（工作日与周末户外）'
-        });
-        mustBuy.push({
-          item: '无糖酸奶 5-7杯',
-          reason: '可作为低负担加餐，减少高糖零食替代。',
-          relatedPlan: '加餐安排（snack）'
-        });
-      }
-
-      if (vegetables.length < 8) {
-        mustBuy.push({
-          item: '深色叶菜 3-4份（菠菜/油麦菜）',
-          reason: '当前蔬菜覆盖不足，需提高纤维和微量元素。',
-          relatedPlan: '晚餐蔬菜配置'
-        });
-      }
-
-      recommended.push({
-        item: '低糖水果 4-6份（苹果/梨/橙）',
-        reason: '用于替代高糖零食并维持维生素补充。',
-        relatedPlan: '水果与加餐安排'
-      });
-      recommended.push({
-        item: '全谷主食 2-3份（燕麦/杂粮米）',
-        reason: '保持稳定能量释放，避免精制碳水波动。',
-        relatedPlan: '早餐与午餐主食策略'
-      });
-
-      optional.push({
-        item: '坚果小包（每日控量）',
-        reason: '补充健康脂肪，适合应急加餐。',
-        relatedPlan: '加餐弹性项'
-      });
-      optional.push({
-        item: '玉米/海苔等健康零食',
-        reason: '用于周末外出场景，替代高糖零食。',
-        relatedPlan: '周末户外活动'
-      });
-
-      let tiers = {
-        mustBuy,
-        recommended,
-        optional
-      };
-
-      let mergedListData = {
-        vegetables: Array.from(new Set([...vegetables, '深色叶菜 3-4份（菠菜/油麦菜）'])).slice(0, 24),
-        protein: Array.from(new Set([...protein, '鸡蛋 10-12个', '无糖酸奶 5-7杯'])).slice(0, 24),
-        carbs: Array.from(new Set([...carbs, '全谷主食 2-3份（燕麦/杂粮米）'])).slice(0, 18),
-        fruits: Array.from(new Set([...fruits, '低糖水果 4-6份（苹果/梨/橙）'])).slice(0, 18)
-      };
-
-      let quality = evaluatePurchaseQuality(tiers);
-      let fallbackApplied = false;
-
-      if (quality.level === 'low') {
-        tiers = {
-          mustBuy: [
-            { item: '鸡蛋 10-12个', reason: '基础蛋白兜底', relatedPlan: '日常早餐/加餐' },
-            { item: '深色叶菜 3-4份', reason: '蔬菜覆盖兜底', relatedPlan: '晚餐蔬菜配置' }
-          ],
-          recommended: [
-            { item: '无糖酸奶 5-7杯', reason: '低负担加餐', relatedPlan: '加餐安排' },
-            { item: '低糖水果 4-6份', reason: '替代高糖零食', relatedPlan: '水果安排' }
-          ],
-          optional: [
-            { item: '坚果小包', reason: '可选健康加餐', relatedPlan: '加餐弹性项' }
-          ]
-        };
-        mergedListData = {
-          vegetables: ['深色叶菜 3-4份（菠菜/油麦菜）'],
-          protein: ['鸡蛋 10-12个', '无糖酸奶 5-7杯'],
-          carbs: ['全谷主食 2-3份（燕麦/杂粮米）'],
-          fruits: ['低糖水果 4-6份（苹果/梨/橙）']
-        };
-        quality = evaluatePurchaseQuality(tiers);
-        fallbackApplied = true;
-      }
-
-      const durationMs = Date.now() - startedAt;
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.purchase.generate',
-        status: 'success',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; score=${quality.score}; level=${quality.level}; fallback=${fallbackApplied ? 1 : 0}`
-      });
-
-      return res.json({
-        summary: fallbackApplied ? '采购建议已生成（已启用模板兜底）' : '采购建议已生成',
-        tiers,
-        mergedListData,
-        quality,
-        fallbackApplied,
-        rationale: {
-          childProfileId,
-          highExerciseMentions: highExercise,
-          currentCoverage: {
-            vegetables: vegetables.length,
-            protein: protein.length,
-            carbs: carbs.length,
-            fruits: fruits.length
-          },
-          dataSources: ['weekly_plan', 'grocery_list']
-        },
-        generatedAt: new Date().toISOString(),
-        meta: { durationMs }
-      });
-    } catch (err: any) {
-      const durationMs = Date.now() - startedAt;
-      const category = classifyAiError(err);
-      logAudit(db, {
-        userId: req.user.id,
-        action: 'ai.purchase.generate',
-        status: 'fail',
-        ip: getClientIp(req),
-        detail: `durationMs=${durationMs}; category=${category}; error=${String(err?.message || err).slice(0, 180)}`
-      });
-      return res.status(500).json({ error: err.message || 'failed to generate ai purchase suggestions', errorCategory: category, durationMs });
-    }
-  });
-
-  // AI Metrics Dashboard (Phase 5 - P5-T2)
-  app.get('/api/ai/metrics', authenticateToken, async (req: any, res) => {
-    const hoursRaw = Number(req.query.hours || 24);
-    const hours = Number.isNaN(hoursRaw) ? 24 : Math.min(7 * 24, Math.max(1, hoursRaw));
-    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-
-    try {
-      const rows = await dbAllP(
-        `SELECT action, status, detail, createdAt
-         FROM audit_logs
-         WHERE userId = ? AND createdAt >= ? AND action LIKE 'ai.%'
-         ORDER BY id DESC`,
-        [req.user.id, since]
-      );
-
-      const metrics: Record<string, any> = {};
-      const categoryCounter: Record<string, number> = {};
-
-      const ensure = (action: string) => {
-        if (!metrics[action]) {
-          metrics[action] = {
-            total: 0,
-            success: 0,
-            fail: 0,
-            durationMsAvg: 0,
-            durations: [] as number[]
-          };
-        }
-        return metrics[action];
-      };
-
-      for (const row of rows) {
-        const action = String(row.action || 'unknown');
-        const status = String(row.status || 'fail');
-        const detail = String(row.detail || '');
-
-        const m = ensure(action);
-        m.total += 1;
-        if (status === 'success') m.success += 1;
-        else m.fail += 1;
-
-        const durMatch = detail.match(/durationMs=(\d+)/);
-        if (durMatch) m.durations.push(Number(durMatch[1]));
-
-        const catMatch = detail.match(/category=([a-z_]+)/);
-        if (catMatch) {
-          const c = catMatch[1];
-          categoryCounter[c] = (categoryCounter[c] || 0) + 1;
-        }
-      }
-
-      Object.values(metrics).forEach((m: any) => {
-        if (m.durations.length > 0) {
-          m.durationMsAvg = Math.round(m.durations.reduce((a: number, b: number) => a + b, 0) / m.durations.length);
-        }
-        delete m.durations;
-      });
-
-      const total = Object.values(metrics).reduce((acc: number, m: any) => acc + m.total, 0);
-      const success = Object.values(metrics).reduce((acc: number, m: any) => acc + m.success, 0);
-      const fail = Object.values(metrics).reduce((acc: number, m: any) => acc + m.fail, 0);
-      const successRate = total > 0 ? Number(((success / total) * 100).toFixed(1)) : 100;
-
-      return res.json({
-        rangeHours: hours,
-        total,
-        success,
-        fail,
-        successRate,
-        byAction: metrics,
-        errorCategories: categoryCounter,
-        generatedAt: new Date().toISOString()
-      });
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'failed to build ai metrics' });
+      return res.status(500).json({ error: err.message || 'undo failed' });
     }
   });
 
