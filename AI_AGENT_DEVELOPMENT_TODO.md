@@ -25,7 +25,7 @@
 ## 当前状态（Doing）
 
 - 当前阶段：**Phase 3 - 前端单入口接入**
-- 当前任务：`P5-T2`（AI 请求日志看板与错误分类）
+- 当前任务：`P3-T3`（动态结果卡片注入）
 - 阻塞项：无
 - 风险项：无
 
@@ -33,10 +33,10 @@
 
 ## 下一步（Next）
 
-1. 启动 P5-T2：AI 请求日志看板（耗时/失败率）
-2. 补齐错误分类与告警策略
-3. 完成 P5-T1 性能与异常兜底回归
-4. 准备 P5-T3 发布说明草案与回滚确认
+1. 启动 `P3-T3`：动态结果卡片注入
+2. 补充 `/api/ai/undo` 错误码与边界测试
+3. 准备 Phase 2/3 阶段验收说明
+4. 启动 P4-T1 下周计划生成器 API 设计
 
 ---
 
@@ -140,9 +140,9 @@
 - [x] 支持“撤销上一步”快捷入口
 
 ### P3-T3 动态结果卡片（无新增导航按钮）
-- [x] 总览注入今日/本周建议卡
-- [x] 计划页注入“下周计划卡”（含“一键应用”按钮，确认后落库）
-- [x] 采购页注入“采购建议卡”（含“一键应用”按钮，确认后落库）
+- [ ] 总览注入今日/本周建议卡
+- [ ] 计划页注入“下周计划卡”（含“一键应用”按钮，确认后落库）
+- [ ] 采购页注入“采购建议卡”（含“一键应用”按钮，确认后落库）
 
 **Phase 3 验收标准**
 - [ ] 仅靠“小人入口”即可完成主流程，不依赖新增 AI 菜单
@@ -157,20 +157,20 @@
 ## Phase 4｜计划与采购智能引擎（质量提升）
 
 ### P4-T1 下周计划生成器
-- [x] 输入融合：历史数据 + 本周执行率 + 最近诊断
-- [x] 输出结构：作息/饮食/运动/观察/复查
-- [x] 输出可落库与二次编辑
+- [ ] 输入融合：历史数据 + 本周执行率 + 最近诊断
+- [ ] 输出结构：作息/饮食/运动/观察/复查
+- [ ] 输出可落库与二次编辑
 
 ### P4-T2 采购清单生成器
-- [x] 按计划映射采购项
-- [x] 分级：必买/建议/可选
-- [x] 每项附理由与关联计划条目（示例：因本周运动打卡频次较高，建议补充高蛋白物资）
+- [ ] 按计划映射采购项
+- [ ] 分级：必买/建议/可选
+- [ ] 每项附理由与关联计划条目（示例：因本周运动打卡频次较高，建议补充高蛋白物资）
 
 ### P4-T3 建议层次化
-- [x] 当日建议
-- [x] 本周建议
-- [x] 下周建议
-- [x] 明确依据数据引用
+- [ ] 当日建议
+- [ ] 本周建议
+- [ ] 下周建议
+- [ ] 明确依据数据引用
 
 ### P4-T4 质量评估与调优
 - [ ] 生成质量打分规则
@@ -225,11 +225,6 @@
 - `src/components/ai/AIAssistant.tsx`
 - `src/api.ts`（新增 aiChat/aiUndo）
 - `src/App.tsx`（接入小人入口）
-- `src/components/Dashboard.tsx`（新增今日/本周建议卡）
-- `src/components/WeeklyPlan.tsx`（接入 /api/ai/plan/generate + 一键应用）
-- `src/components/GroceryList.tsx`（接入 /api/ai/purchase/generate + 一键应用）
-- `server.ts`（新增 /api/ai/plan/generate 与 /api/ai/purchase/generate）
-- `src/api.ts`（新增 generateAiPlan / generateAiPurchase）
 
 ---
 
@@ -252,13 +247,4 @@
 - [x] 完成 P2-T5：AI 全链路冒烟（chat/write/confirm/undo）
 - [x] 完成 P3-T1：小人入口 + 聊天抽屉 + `/api/ai/chat` 联调
 - [x] 完成 P3-T2：结构化回执卡 + 医疗确认弹窗 + 撤销快捷入口
-- [x] 完成 P3-T3：总览建议卡 + 下周计划卡（一键应用）+ 采购建议卡（一键应用）
-- [x] 完成 P4-T1/T2/T3：后端计划/采购生成器 + 前端接入（/api/ai/plan/generate & /api/ai/purchase/generate）
-- [x] 本地验证：`npm run lint` 通过；`npm run build` 通过（产物含 Dashboard/WeeklyPlan/GroceryList 新 chunk）
-- [x] API 验证：
-  - /api/ai/plan/generate 返回 7 天 planData + tips
-  - /api/ai/purchase/generate 返回 must/recommended/optional + mergedListData
-  - /api/ai/undo 错误码：400 (缺 token) / 404 (not found) / 409 (重复撤销)
-  - 冒烟：BASE_URL=http://localhost:3400 `node scripts/api-smoke-test.mjs` 通过
-  - 集成验证（计划生成→采购生成→落库）通过
 

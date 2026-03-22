@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { weeklyPlan as defaultPlan, dayColors } from '../data';
-import { Activity, Lightbulb, Utensils, CheckCircle2, RotateCcw, Download, Upload, Edit2, Save, X, Wand2, Sparkles } from 'lucide-react';
+import { Activity, Lightbulb, Utensils, CheckCircle2, RotateCcw, Download, Upload, Edit2, Save, X, Wand2 } from 'lucide-react';
 import { getWeekDates } from '../utils';
 import { api, getToken } from '../api';
 
@@ -50,13 +50,6 @@ export default function WeeklyPlan() {
     fetchData();
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!loading && isAuthenticated) {
-      loadAiPlanSuggestion();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, isAuthenticated]);
-
   const savePlanToFirebase = async (newPlanData: any) => {
     if (!isAuthenticated) return;
     try {
@@ -72,27 +65,6 @@ export default function WeeklyPlan() {
       await api.saveChecklist(JSON.stringify(newChecklist));
     } catch (error) {
       console.error("Error saving checklist data:", error);
-    }
-  };
-
-  const [aiPlanSuggestion, setAiPlanSuggestion] = useState<any | null>(null);
-  const [aiPlanLoading, setAiPlanLoading] = useState(false);
-  const [aiPlanError, setAiPlanError] = useState('');
-  const [planApplyLoading, setPlanApplyLoading] = useState(false);
-
-  const loadAiPlanSuggestion = async () => {
-    if (!isAuthenticated) return;
-    setAiPlanLoading(true);
-    setAiPlanError('');
-    try {
-      const resp = await api.generateAiPlan();
-      setAiPlanSuggestion(resp || null);
-    } catch (error: any) {
-      console.error('Failed to generate AI plan suggestion', error);
-      setAiPlanError(error?.message || '生成失败');
-      setAiPlanSuggestion(null);
-    } finally {
-      setAiPlanLoading(false);
     }
   };
 
@@ -225,25 +197,6 @@ export default function WeeklyPlan() {
     setEditForm(null);
   };
 
-  const applyNextWeekSuggestion = async () => {
-    if (planApplyLoading || !aiPlanSuggestion?.planData) return;
-    const ok = window.confirm('确认将“下周计划建议”一键应用到当前计划？');
-    if (!ok) return;
-
-    setPlanApplyLoading(true);
-    try {
-      setPlanData(aiPlanSuggestion.planData as any);
-      await savePlanToFirebase(aiPlanSuggestion.planData);
-      alert('已应用下周计划建议。');
-      await loadAiPlanSuggestion();
-    } catch (error) {
-      console.error('Failed to apply suggested weekly plan', error);
-      alert('应用失败，请稍后重试。');
-    } finally {
-      setPlanApplyLoading(false);
-    }
-  };
-
   if (loading) {
     return <div className="animate-pulse text-center py-10 text-stone-400">加载计划中...</div>;
   }
@@ -319,53 +272,6 @@ export default function WeeklyPlan() {
           </button>
         )}
         </div>
-      </div>
-
-      <div className="bg-white rounded-3xl border border-violet-100 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4 mb-3">
-          <div>
-            <h3 className="text-base font-extrabold text-violet-700 inline-flex items-center gap-2">
-              <Sparkles size={16} />
-              {aiPlanSuggestion?.summary || '下周计划建议卡'}
-            </h3>
-            {aiPlanSuggestion?.rationale && (
-              <p className="text-xs text-stone-500 mt-1">
-                依据：近7日打卡 {aiPlanSuggestion.rationale.totalCheckins7d ?? '-'} 次；医疗风险 {aiPlanSuggestion.rationale.latestDiagnosisRisk || 'normal'}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadAiPlanSuggestion}
-              disabled={aiPlanLoading}
-              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap ${aiPlanLoading ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'}`}
-            >
-              {aiPlanLoading ? '生成中...' : '重新生成'}
-            </button>
-            <button
-              onClick={applyNextWeekSuggestion}
-              disabled={planApplyLoading || !aiPlanSuggestion?.planData}
-              className={`px-3 py-2 text-xs font-bold rounded-xl border transition-colors whitespace-nowrap ${(planApplyLoading || !aiPlanSuggestion?.planData) ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
-            >
-              {planApplyLoading ? '应用中...' : '一键应用'}
-            </button>
-          </div>
-        </div>
-
-        {aiPlanError ? (
-          <p className="text-sm text-rose-600">建议生成失败：{aiPlanError}</p>
-        ) : aiPlanLoading && !aiPlanSuggestion ? (
-          <p className="text-sm text-stone-500">正在生成建议...</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {(Array.isArray(aiPlanSuggestion?.tips) ? aiPlanSuggestion.tips : []).map((tip: string, idx: number) => (
-              <li key={idx} className="text-sm text-violet-700 flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-2 shrink-0"></span>
-                <span>{tip}</span>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
