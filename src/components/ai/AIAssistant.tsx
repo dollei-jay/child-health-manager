@@ -81,12 +81,17 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
 
       const pendingCard = cards.find((c) => c?.data?.pendingConfirm);
       const actionType = actions?.[0]?.type || 'add_diagnosis';
-      const pendingFunctionCall = pendingCard?.data?.input
+      const pendingFunctionCall = pendingCard?.data?.functionCall
         ? {
-            name: String(actionType),
-            arguments: pendingCard.data.input as Record<string, any>
+            name: String(pendingCard.data.functionCall.name || actionType),
+            arguments: (pendingCard.data.functionCall.arguments || {}) as Record<string, any>
           }
-        : undefined;
+        : pendingCard?.data?.input
+          ? {
+              name: String(actionType),
+              arguments: pendingCard.data.input as Record<string, any>
+            }
+          : undefined;
 
       appendMessage({
         role: 'assistant',
@@ -115,14 +120,15 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
     }
   };
 
-  const confirmMedicalWrite = async (pending?: PendingFunctionCall) => {
+  const confirmPendingWrite = async (pending?: PendingFunctionCall) => {
     if (!pending) return;
+    const isMedical = pending.name === 'add_diagnosis';
     try {
       const resp = await api.aiChat({
         sessionId,
-        message: '确认写入医疗记录',
+        message: isMedical ? '确认写入医疗记录' : '确认写入建议内容',
         childProfileId: childProfileId || undefined,
-        confirmMedicalWrite: true,
+        confirmMedicalWrite: isMedical,
         functionCall: {
           name: pending.name,
           arguments: pending.arguments
@@ -136,7 +142,7 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
         content: String(resp?.assistant || '已确认写入。'),
         status: 'ok',
         undoToken: cards?.[0]?.data?.undoToken,
-        riskLevel: resp?.riskLevel || 'medium',
+        riskLevel: resp?.riskLevel || (isMedical ? 'medium' : 'low'),
         cards,
         actions: Array.isArray(resp?.actions) ? resp.actions : []
       });
@@ -208,16 +214,20 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
 
                   {m.pendingFunctionCall && (
                     <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-2">
-                      <div className="text-xs text-amber-800 mb-2">医疗相关写入需确认，是否继续？</div>
+                      <div className="text-xs text-amber-800 mb-2">
+                        {m.pendingFunctionCall.name === 'add_diagnosis'
+                          ? '医疗相关写入需确认，是否继续？'
+                          : '该建议将写入页面数据，是否确认写入？'}
+                      </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => confirmMedicalWrite(m.pendingFunctionCall)}
+                          onClick={() => confirmPendingWrite(m.pendingFunctionCall)}
                           className="text-xs px-2 py-1 rounded bg-amber-500 text-white hover:bg-amber-600"
                         >
                           确认写入
                         </button>
                         <button
-                          onClick={() => appendMessage({ role: 'assistant', content: '已取消本次医疗写入。', status: 'ok' })}
+                          onClick={() => appendMessage({ role: 'assistant', content: '已取消本次写入。', status: 'ok' })}
                           className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-100"
                         >
                           取消

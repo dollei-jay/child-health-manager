@@ -335,6 +335,58 @@ async function startServer() {
     }, 0);
   };
 
+  const weekDaySeed = [
+    { id: 'mon', day: '周一' },
+    { id: 'tue', day: '周二' },
+    { id: 'wed', day: '周三' },
+    { id: 'thu', day: '周四' },
+    { id: 'fri', day: '周五' },
+    { id: 'sat', day: '周六' },
+    { id: 'sun', day: '周日' }
+  ];
+
+  const createFallbackPlan = () => {
+    return weekDaySeed.map((d) => ({
+      id: d.id,
+      day: d.day,
+      food: {
+        breakfast: '牛奶 + 鸡蛋 + 全麦主食',
+        lunch: '正常午餐，主食适量',
+        snack: '无糖酸奶/水果',
+        dinner: '优质蛋白 + 深色蔬菜',
+        fruit: '低糖水果 1 份'
+      },
+      exercise: ['中等强度活动 40-60 分钟', '拉伸 10 分钟'],
+      suggestion: '保持作息规律，先执行再复盘'
+    }));
+  };
+
+  const tunePlanByExecution = (basePlan: any[], totalCheckins: number, latestDiagnosisRisk: 'normal' | 'warning' | 'critical') => {
+    const mode = totalCheckins >= 22 ? 'enhance' : totalCheckins >= 10 ? 'standard' : 'recovery';
+
+    return basePlan.map((day: any, idx: number) => {
+      const exercise = Array.isArray(day?.exercise) ? day.exercise.filter((x: any) => String(x || '').trim()) : [];
+      const tunedExercise =
+        mode === 'enhance'
+          ? [...exercise.slice(0, 2), '补充核心/柔韧训练 10 分钟']
+          : mode === 'recovery'
+            ? ['快走 30 分钟', '拉伸 10 分钟']
+            : [...exercise.slice(0, 2), '维持 40-60 分钟稳定活动'];
+
+      let suggestion = idx >= 5 ? '周末优先户外 + 早睡，不安排高糖零食。' : String(day?.suggestion || '保持执行节奏');
+      if (latestDiagnosisRisk === 'warning') suggestion += '（近期有医疗提醒，关注作息和复查）';
+      if (latestDiagnosisRisk === 'critical') suggestion += '（高风险提示：请优先遵医嘱并减少高强度负荷）';
+
+      return {
+        id: day.id,
+        day: day.day,
+        food: day?.food || {},
+        exercise: tunedExercise,
+        suggestion
+      };
+    });
+  };
+
   // Basic login rate limit (in-memory)
   const LOGIN_WINDOW_MS = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000); // 15 min
   const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_RATE_LIMIT_MAX || 10);
@@ -1708,6 +1760,19 @@ async function startServer() {
         );
       });
 
+      const childProfile = childProfileId
+        ? await new Promise<any>((resolve, reject) => {
+            db.get(
+              `SELECT id, childName, childBirthDate, childGender, childGoal FROM child_profiles WHERE id = ? AND userId = ?`,
+              [childProfileId, req.user.id],
+              (err: any, row: any) => {
+                if (err) return reject(err);
+                resolve(row || null);
+              }
+            );
+          })
+        : null;
+
       const context = {
         userId: req.user.id,
         childProfileId,
@@ -1723,24 +1788,175 @@ async function startServer() {
           }
         : null;
 
-      const reply = directFunctionCall
-        ? await aiOrchestrator.runFunctionCall({
-            context,
-            functionCall: directFunctionCall,
-            answer: message || '已执行函数调用。'
-          })
-        : await aiOrchestrator.chat({
-            context,
-            messages: [
-              ...history
-                .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
-                .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
-              {
-                role: 'user',
-                content: message
+      const profileHint = childProfile
+        ? [
+            '【孩子档案（已注册，可直接使用，不要重复追问）】',
+            `姓名：${childProfile.childName || ''}`,
+            `生日：${childProfile.childBirthDate || ''}`,
+            `性别：${childProfile.childGender === 'boy' ? '男孩' : '女孩'}`,
+            `目标：${childProfile.childGoal || ''}`
+          ].join('\n')
+        : '【孩子档案缺失】如需年龄/性别可补问。';
+
+      const wantsWeeklyPlan = /(生成|做|安排).*(一周计划|周计划)|一周计划.*(生成|做|安排)/.test(message);
+      const wantsGrocery = /(生成|做|整理).*(采购清单|采购列表|买菜清单)|采购清单.*(生成|做|整理)/.test(message);
+
+      let reply: any;
+
+      if (wantsWeeklyPlan && !directFunctionCall) {
+        const latestRiskRow = childProfileId
+          ? await dbGetP(
+              `SELECT riskFlag FROM diagnosis_records WHERE userId = ? AND childProfileId = ? ORDER BY COALESCE(visitDate, createdAt) DESC, id DESC LIMIT 1`,
+              [req.user.id, childProfileId]
+            )
+          : null;
+        const latestRisk = ['normal', 'warning', 'critical'].includes(String(latestRiskRow?.riskFlag || 'normal'))
+          ? String(latestRiskRow?.riskFlag || 'normal') as 'normal' | 'warning' | 'critical'
+          : 'normal';
+
+        const checklistRow = childProfileId
+          ? await dbGetP(`SELECT checkedItems FROM checklist WHERE userId = ? AND childProfileId = ? LIMIT 1`, [req.user.id, childProfileId])
+          : null;
+        const planRow = childProfileId
+          ? await dbGetP(`SELECT planData FROM weekly_plan WHERE userId = ? AND childProfileId = ? LIMIT 1`, [req.user.id, childProfileId])
+          : null;
+
+        const checklistData = parseMaybeJson(checklistRow?.checkedItems, {});
+        const totalCheckins7d = Object.entries(checklistData).filter(([k, v]) => {
+          if (!v || typeof k !== 'string') return false;
+          const ds = k.slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return false;
+          const d = startOfDay(new Date(ds));
+          const today = startOfDay(new Date());
+          const since = new Date(today);
+          since.setDate(today.getDate() - 6);
+          return d >= since && d <= today;
+        }).length;
+
+        const basePlan = parseMaybeJson(planRow?.planData, createFallbackPlan());
+        const suggestedPlan = tunePlanByExecution(Array.isArray(basePlan) ? basePlan : createFallbackPlan(), totalCheckins7d, latestRisk);
+
+        reply = {
+          summary: '已生成一周计划草案（待你确认写入）',
+          assistant: '我已生成一周计划草案。你可以先提修改意见；确认后我再写入到“一周计划”页面。',
+          actions: [
+            { type: 'apply_weekly_plan', status: 'pending_confirm', summary: '待确认写入 weekly_plan' }
+          ],
+          cards: [
+            {
+              type: 'pending_write',
+              title: '待确认写入：一周计划',
+              data: {
+                pendingConfirm: true,
+                functionCall: {
+                  name: 'apply_weekly_plan',
+                  arguments: { planData: suggestedPlan }
+                }
               }
-            ]
-          });
+            }
+          ],
+          riskLevel: 'low'
+        };
+      } else if (wantsGrocery && !directFunctionCall) {
+        const groceryRow = childProfileId
+          ? await dbGetP(`SELECT listData FROM grocery_list WHERE userId = ? AND childProfileId = ? LIMIT 1`, [req.user.id, childProfileId])
+          : null;
+        const list = parseMaybeJson(groceryRow?.listData, { vegetables: [], protein: [], carbs: [], fruits: [] });
+        const vegetables = Array.isArray(list.vegetables) ? list.vegetables : [];
+        const protein = Array.isArray(list.protein) ? list.protein : [];
+        const carbs = Array.isArray(list.carbs) ? list.carbs : [];
+        const fruits = Array.isArray(list.fruits) ? list.fruits : [];
+
+        const mergedListData = {
+          vegetables: Array.from(new Set([...vegetables, '深色叶菜 3-4份（菠菜/油麦菜）'])).slice(0, 24),
+          protein: Array.from(new Set([...protein, '鸡蛋 10-12个', '无糖酸奶 5-7杯'])).slice(0, 24),
+          carbs: Array.from(new Set([...carbs, '全谷主食 2-3份（燕麦/杂粮米）'])).slice(0, 18),
+          fruits: Array.from(new Set([...fruits, '低糖水果 4-6份（苹果/梨/橙）'])).slice(0, 18)
+        };
+
+        reply = {
+          summary: '已生成采购清单草案（待你确认写入）',
+          assistant: '我已生成采购清单草案。你可以先提修改意见；确认后我再写入到“采购清单”页面。',
+          actions: [
+            { type: 'apply_grocery_list', status: 'pending_confirm', summary: '待确认写入 grocery_list' }
+          ],
+          cards: [
+            {
+              type: 'pending_write',
+              title: '待确认写入：采购清单',
+              data: {
+                pendingConfirm: true,
+                functionCall: {
+                  name: 'apply_grocery_list',
+                  arguments: { listData: mergedListData }
+                }
+              }
+            }
+          ],
+          riskLevel: 'low'
+        };
+      } else {
+        reply = directFunctionCall
+          ? await aiOrchestrator.runFunctionCall({
+              context,
+              functionCall: directFunctionCall,
+              answer: message || '已执行函数调用。'
+            })
+          : await aiOrchestrator.chat({
+              context,
+              messages: [
+                {
+                  role: 'assistant',
+                  content: profileHint
+                },
+                ...history
+                  .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
+                  .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
+                {
+                  role: 'user',
+                  content: message
+                }
+              ]
+            });
+      }
+
+      if (directFunctionCall?.name === 'apply_weekly_plan') {
+        const planData = directFunctionCall.arguments?.planData;
+        if (!Array.isArray(planData)) {
+          return res.status(400).json({ error: 'apply_weekly_plan requires planData array' });
+        }
+        const updatedAt = new Date().toISOString();
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `INSERT INTO weekly_plan (userId, childProfileId, planData, updatedAt) VALUES (?, ?, ?, ?)
+             ON CONFLICT(userId, childProfileId) DO UPDATE SET planData = excluded.planData, updatedAt = excluded.updatedAt`,
+            [req.user.id, childProfileId || null, JSON.stringify(planData), updatedAt],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+        reply.assistant = '已按确认写入“一周计划”。';
+        reply.actions = [{ type: 'apply_weekly_plan', status: 'done', summary: 'weekly_plan 已更新' }];
+        reply.cards = [{ type: 'write_receipt', title: '写入回执', data: { target: 'weekly_plan', count: Array.isArray(planData) ? planData.length : 0 } }];
+      }
+
+      if (directFunctionCall?.name === 'apply_grocery_list') {
+        const listData = directFunctionCall.arguments?.listData;
+        if (!listData || typeof listData !== 'object') {
+          return res.status(400).json({ error: 'apply_grocery_list requires listData object' });
+        }
+        const updatedAt = new Date().toISOString();
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `INSERT INTO grocery_list (userId, childProfileId, listData, updatedAt) VALUES (?, ?, ?, ?)
+             ON CONFLICT(userId, childProfileId) DO UPDATE SET listData = excluded.listData, updatedAt = excluded.updatedAt`,
+            [req.user.id, childProfileId || null, JSON.stringify(listData), updatedAt],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+        reply.assistant = '已按确认写入“采购清单”。';
+        reply.actions = [{ type: 'apply_grocery_list', status: 'done', summary: 'grocery_list 已更新' }];
+        reply.cards = [{ type: 'write_receipt', title: '写入回执', data: { target: 'grocery_list', groups: Object.keys(listData || {}).length } }];
+      }
 
       await new Promise<void>((resolve, reject) => {
         db.run(

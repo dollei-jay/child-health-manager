@@ -2,7 +2,73 @@ import { AiMessage, ModelClient } from './types.js';
 
 class MockModelClient implements ModelClient {
   async generate(input: { systemPrompt: string; messages: AiMessage[] }) {
-    const lastUser = [...input.messages].reverse().find((m) => m.role === 'user')?.content || '';
+    const lastUser = String([...input.messages].reverse().find((m) => m.role === 'user')?.content || '').trim();
+
+    // 基础建议问答（不调用工具）
+    if (/建议|怎么做|咋办|最近/.test(lastUser)) {
+      return {
+        text: [
+          '最近建议先抓 3 件事：',
+          '1) 每周至少记录 1 次身高体重，确保趋势可追踪。',
+          '2) 每天优先完成“早餐/运动/早睡”三项打卡。',
+          '3) 周末做一次复盘，下一周计划与采购清单同步调整。'
+        ].join('\n')
+      };
+    }
+
+    // 身高体重识别 -> update_growth
+    const hw = /(?:身高|高)\s*(\d{2,3}(?:\.\d)?)\s*(?:cm|厘米)?[，,\s]*.*(?:体重|重)\s*(\d{1,3}(?:\.\d)?)\s*(?:kg|公斤)?/i.exec(lastUser);
+    if (hw) {
+      return {
+        text: JSON.stringify({
+          answer: `收到，已按你提供的数据准备记录：身高${hw[1]}cm，体重${hw[2]}kg。`,
+          functionCall: {
+            name: 'update_growth',
+            arguments: {
+              heightCm: Number(hw[1]),
+              weightKg: Number(hw[2]),
+              measuredAt: new Date().toISOString().slice(0, 10)
+            }
+          }
+        })
+      };
+    }
+
+    // 待办识别 -> add_todo
+    const todoMatch = /(?:待办|提醒|记一下|记个|安排)(?:：|:)?\s*(.+)/.exec(lastUser);
+    if (todoMatch && todoMatch[1]?.trim()) {
+      return {
+        text: JSON.stringify({
+          answer: `好的，已准备新增待办：${todoMatch[1].trim()}`,
+          functionCall: {
+            name: 'add_todo',
+            arguments: {
+              text: todoMatch[1].trim().slice(0, 120),
+              priority: 'medium'
+            }
+          }
+        })
+      };
+    }
+
+    // 医疗记录识别 -> add_diagnosis（仍由后端确认门禁控制）
+    if (/诊断|就医|复查|医生/.test(lastUser)) {
+      return {
+        text: JSON.stringify({
+          answer: '我先为你整理成医疗记录草稿，确认后写入。',
+          functionCall: {
+            name: 'add_diagnosis',
+            arguments: {
+              diagnosisText: lastUser.slice(0, 200),
+              adviceText: '请结合医生建议执行，并按时复查。',
+              riskFlag: 'warning',
+              visitDate: new Date().toISOString().slice(0, 10)
+            }
+          }
+        })
+      };
+    }
+
     return {
       text: `已收到：${lastUser}`
     };
