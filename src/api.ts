@@ -368,5 +368,31 @@ export const api = {
       throw new Error(err.error || 'Failed to undo AI action');
     }
     return res.json();
+  },
+
+  async generateAiPlan(data: { childProfileId?: number; horizonDays?: number } = {}) {
+    const res = await fetch(`${API_URL}/ai/plan/generate`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to generate AI plan');
+    }
+    return res.json();
+  },
+
+  async generateAiPurchase(data: { childProfileId?: number; planData?: any[] } = {}) {
+    const res = await fetch(`${API_URL}/ai/purchase/generate`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to generate AI purchase suggestions');
+    }
+    return res.json();
   }
 };

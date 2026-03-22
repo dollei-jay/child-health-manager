@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { CalendarCheck2, ClipboardList, ShoppingCart, TrendingUp, ChevronLeft, ChevronRight, Star, Sparkles } from 'lucide-react';
 import { api } from '../api';
 import { getMonthDates } from '../utils';
 import PageSection from './PageSection';
@@ -15,6 +15,7 @@ interface Todo {
   text: string;
   completed: boolean;
   createdAt: string;
+  dueDate?: string | null;
 }
 
 interface GrowthRecord {
@@ -113,6 +114,63 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
     }, 0);
   }, [groceryData]);
 
+  const aiSuggestions = useMemo(() => {
+    const todayTips: string[] = [];
+    const weekTips: string[] = [];
+
+    const today = new Date();
+    const todayISO = today.toISOString().slice(0, 10);
+
+    const overdueCount = pendingTodos.filter((t) => {
+      if (!t.dueDate) return false;
+      return new Date(t.dueDate).getTime() < new Date(todayISO).getTime();
+    }).length;
+
+    if (overdueCount > 0) {
+      todayTips.push(`先清理逾期任务（${overdueCount}项），优先高风险事项。`);
+    }
+
+    if (pendingTodos.length > 0) {
+      todayTips.push(`今日建议至少完成 2 项待办，当前未完成 ${pendingTodos.length} 项。`);
+    } else {
+      todayTips.push('今日待办已清空，可提前准备明日计划。');
+    }
+
+    const todayCheckins = Object.entries(checklistData).filter(([key, checked]) => checked && key.startsWith(todayISO)).length;
+    if (todayCheckins < 3) {
+      todayTips.push('今日打卡偏少，建议补齐“早餐/运动/早睡”三项基础动作。');
+    }
+
+    if (!latestGrowth) {
+      weekTips.push('本周建议补录 1 条身高体重，确保趋势可追踪。');
+    } else {
+      const latest = new Date(latestGrowth.date);
+      const diffDays = Math.floor((today.getTime() - latest.getTime()) / (24 * 60 * 60 * 1000));
+      if (diffDays >= 7) {
+        weekTips.push(`最近一次生长记录距今 ${diffDays} 天，建议本周更新数据。`);
+      }
+    }
+
+    if (weeklyTaskCount < 20) {
+      weekTips.push('本周计划任务量偏少，建议补充 2-3 个可执行动作。');
+    } else {
+      weekTips.push('本周计划量充足，重点盯执行连续性。');
+    }
+
+    if (groceryCount < 12) {
+      weekTips.push('采购清单偏少，建议补齐优质蛋白和蔬菜库存。');
+    }
+
+    if (weekTips.length < 3) {
+      weekTips.push('周末前安排一次复盘，确认下周计划与采购清单一致。');
+    }
+
+    return {
+      today: todayTips.slice(0, 3),
+      week: weekTips.slice(0, 3)
+    };
+  }, [pendingTodos, checklistData, latestGrowth, weeklyTaskCount, groceryCount]);
+
   const calendarData = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -204,6 +262,38 @@ export default function Dashboard({ childName, childAvatar, isBoyTheme = false }
           sub={groceryCount > 0 ? '可在采购清单模块继续编辑' : '尚未填写采购清单'}
         />
       </div>
+
+      <PageSection
+        title="AI 建议卡（今日 / 本周）"
+        subtitle="根据当前待办、打卡与生长记录动态生成"
+        right={<Sparkles size={16} className="text-pink-500" />}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-pink-200 bg-pink-50/70 p-4">
+            <h4 className="text-sm font-extrabold text-pink-700 mb-2">今日建议</h4>
+            <ul className="space-y-2">
+              {aiSuggestions.today.map((item, idx) => (
+                <li key={idx} className="text-sm text-pink-700 flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-pink-400 mt-2 shrink-0"></span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-4">
+            <h4 className="text-sm font-extrabold text-purple-700 mb-2">本周建议</h4>
+            <ul className="space-y-2">
+              {aiSuggestions.week.map((item, idx) => (
+                <li key={idx} className="text-sm text-purple-700 flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 mt-2 shrink-0"></span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </PageSection>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <PageSection title="优先待办（Top 5)">
