@@ -1,271 +1,155 @@
-# AI 驱动健康管理智能体开发计划（本地执行版）
+# AI 驱动健康管理智能体开发计划（Beta 开发主线）
 
 > 项目：`child-health-manager`
-> 
-> 执行模式：**仅本地开发**（未获董事长明确“推送”指令前，禁止 push / 发布）
-> 
-> 创建时间：2026-03-21
+>
+> 代码分支策略：
+> - `origin/main`：稳定正式版（仅董事长确认后发布）
+> - `beta`（本地）：持续开发与测试版
+>
+> 执行模式：默认**先本地开发 + 本地验证**，未获明确指令不推正式代码。
+>
+> 最后更新时间：2026-03-23
 
 ---
 
-## 使用规则（必须遵守）
+## 使用规则（长期执行）
 
-1. 每完成一个 Todo，立即将 `- [ ]` 改为 `- [x]`。
-2. 每完成一个关键项，必须补充：
-   - **证据**（命令输出/截图/测试结果）
-   - **成果路径**（代码文件路径）
-3. 每次开始新一轮开发，先看本文件这三块：
-   - `当前状态（Doing）`
-   - `下一步（Next）`
-   - `成果索引（Artifacts）`
-4. 不允许只改状态不留证据。
+1. 每完成一个 Todo，必须立即从 `- [ ]` 改为 `- [x]`。
+2. 每个关键里程碑必须补充：
+   - 证据（命令输出/接口返回/页面验证）
+   - 成果路径（具体文件）
+3. 每次新任务开始前先看三块：
+   - 当前状态（Doing）
+   - 下一步（Next）
+   - 开发日志（本文件 + DEVELOPMENT_PROGRESS.md）
+4. 未经董事长明确指令：
+   - 不推正式代码到 `main`
+   - 日常进度优先通过文档同步
 
 ---
 
 ## 当前状态（Doing）
 
-- 当前阶段：**Phase 5 - 已完成（待董事长验收）**
-- 当前任务：`验收与发布窗口确认`
+- 当前阶段：**Phase 6 - AI 交互闭环体验优化（Beta）**
+- 当前任务：`P6-T1`（建议→调整→确认→写入→回执 全链路）
 - 阻塞项：无
-- 风险项：无
+- 风险项：
+  - 若误将 beta 代码推 main，会污染稳定版
 
 ---
 
 ## 下一步（Next）
 
-1. 董事长验收：确认 Phase 3 验收标准
-2. 董事长验收：确认上线窗口与发布节奏
-3. 如获指令：执行代码推送 main
-4. 发布后按清单做抽检与回滚待命
+1. 完成 P6-T1：计划/采购“确认写入门禁”前后端联调
+2. 完成 P6-T2：对话中“修改建议草案”能力（不落库）
+3. 完成 P6-T3：确认写入后页面实时刷新与回执一致
+4. 完成 P6-T4：回归验证并固化用例
 
 ---
 
 ## Phase 0｜立项与主线确认（已完成）
 
-- [x] P0-T1 确认主线：从功能型网站升级为“AI 驱动健康管理智能体系统”
-- [x] P0-T2 确认前端策略：单入口“小人”智能体，不增加多处 AI 按钮
-- [x] P0-T3 确认开发策略：先本地开发，未明确允许前不推送
-
-**成果路径**
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/AI_AGENT_DEVELOPMENT_TODO.md`
+- [x] P0-T1 主线确认：功能站点升级为 AI 驱动健康管理系统
+- [x] P0-T2 前端策略：单入口“小人”，不新增复杂 AI 菜单
+- [x] P0-T3 开发策略：先本地，后发布
 
 ---
 
-## Phase 1｜蓝图与边界（规则先行）
+## Phase 1｜边界与规则（已完成）
 
-### P1-T1 规则蓝图 v1（边界与执行规则）
-- [x] 输出智能体边界与执行规则 v1 草案
-- [x] 明确三层能力：认知层 / 决策层 / 执行层
-- [x] 明确“自动写库 + 回执 + 可撤销”原则
-
-### P1-T2 数据模型与 API 清单（进行中）
-- [x] 盘点现有表结构与可复用字段
-- [x] 明确新增表（如 ai_ops_log / ai_sessions / diagnosis_records 扩展）
-- [x] 设计 AI 专用 API：`/api/ai/chat`、`/api/ai/plan/generate`、`/api/ai/purchase/generate`
-- [x] 设计写库回执结构与撤销 token 机制
-
-### P1-T3 写库权限矩阵
-- [x] 列出“自动写入”动作白名单
-- [x] 列出“必须确认”动作清单
-- [x] 定义高风险动作判定条件
-- [x] 定义确认弹窗标准文案
-
-### P1-T4 医疗边界与风险策略
-- [x] 定义医疗建议边界（仅限生活干预：饮食/运动/作息；不输出诊断结论）
-- [x] 定义高风险触发规则（异常波动/持续症状等）
-- [x] 增加“阻断并建议就医”硬规则（如骨龄严重偏离、体重骤降等触发后禁止继续给出日常建议）
-- [x] 定义统一免责声明模板
-
-**Phase 1 验收标准**
-- [x] 有完整文档可直接指导开发（规则、数据、接口、风险）
-- [x] 董事长可一眼看出：可自动执行什么、何时必须确认
-
-**预计成果路径**
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/docs/ai-agent/01-boundary-rules-v1.md`
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/docs/ai-agent/02-data-api-spec-v1.md`
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/docs/ai-agent/03-write-policy-matrix-v1.md`
+- [x] P1-T1 规则蓝图（认知/决策/执行三层）
+- [x] P1-T2 数据模型与 API 清单
+- [x] P1-T3 写库权限矩阵
+- [x] P1-T4 医疗边界与风险策略
 
 ---
 
-## Phase 2｜后端最小闭环（会读、会写、会回执）
+## Phase 2｜后端最小闭环（已完成）
 
-### P2-T1 AI Orchestrator 基座
-- [x] 新增 AI 服务目录（`server/ai/*` 或等效结构）
-- [x] 抽象 tool 接口（read/write/plan/purchase）
-- [x] 接入模型调用（可配置 provider）
-
-### P2-T2 `/api/ai/chat` 主入口
-- [x] 支持多轮上下文（当前孩子 + 时间范围）
-- [x] 支持 tool calling（只允许白名单工具）
-- [x] 引入 Function Calling 标准动作指令（如 `update_weight` / `add_todo`）并做参数校验
-- [x] 返回结构化回执（做了什么、写了什么、建议什么）
-
-### P2-T3 写库执行器
-- [x] 实现身高体重自动录入工具
-- [x] 实现诊断记录录入工具（高风险默认确认）
-- [x] 实现待办/计划/采购写入工具
-- [x] 统一操作日志与审计记录
-
-### P2-T4 撤销机制
-- [x] 设计撤销 token（一次写入对应一次可撤销句柄）
-- [x] 新增撤销 API
-- [x] 撤销后回执与审计补记
-
-### P2-T5 测试与冒烟
-- [x] 覆盖主要意图解析测试
-- [x] 覆盖关键写库链路测试
-- [x] 覆盖撤销链路测试
-
-**Phase 2 验收标准**
-- [x] 一句话能触发“解析 → 写库 → 回执”完整闭环
-- [x] 写库动作可追踪、可撤销、可审计
-
-**预计成果路径**
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/server/ai/`
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/server.ts`（API 路由接入）
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/scripts/ai-smoke-test.mjs`
+- [x] P2-T1 AI Orchestrator 基座
+- [x] P2-T2 `/api/ai/chat` 主入口（含工具调用）
+- [x] P2-T3 写库执行器（growth/todo/diagnosis）
+- [x] P2-T4 `/api/ai/undo` 撤销机制
+- [x] P2-T5 冒烟测试
 
 ---
 
-## Phase 3｜前端单入口“小人”接入
+## Phase 3｜前端单入口接入（已完成）
 
-### P3-T1 小人入口与聊天抽屉
-- [x] 新增固定入口（右下角）
-- [x] 新增聊天抽屉 UI（消息流 + 输入 + 状态）
-- [x] 支持孩子上下文显示与切换感知
-
-### P3-T2 回执卡片与确认弹窗
-- [x] 展示结构化回执卡片（写入项/建议项）
-- [x] 高风险动作弹确认框
-- [x] 支持“撤销上一步”快捷入口
-
-### P3-T3 动态结果卡片（无新增导航按钮）
-- [x] 总览注入今日/本周建议卡
-- [x] 计划页注入“下周计划卡”（含“一键应用”按钮，确认后落库）
-- [x] 采购页注入“采购建议卡”（含“一键应用”按钮，确认后落库）
-
-**Phase 3 验收标准**
-- [x] 仅靠“小人入口”即可完成主流程，不依赖新增 AI 菜单
-- [x] 前端主信息架构保持简洁
-
-**预计成果路径**
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/src/components/ai/`
-- `/home/dollei/.openclaw/workspace-itops/child-health-manager/src/App.tsx`
+- [x] P3-T1 小人入口与聊天抽屉
+- [x] P3-T2 回执卡 + 风险确认 + 撤销入口
+- [x] P3-T3 动态结果卡（总览/计划/采购）
+- [x] Phase 3 验收标准收口
 
 ---
 
-## Phase 4｜计划与采购智能引擎（质量提升）
+## Phase 4｜计划与采购智能引擎（已完成）
 
-### P4-T1 下周计划生成器
-- [x] 输入融合：历史数据 + 本周执行率 + 最近诊断
-- [x] 输出结构：作息/饮食/运动/观察/复查
-- [x] 输出可落库与二次编辑
-
-### P4-T2 采购清单生成器
-- [x] 按计划映射采购项
-- [x] 分级：必买/建议/可选
-- [x] 每项附理由与关联计划条目（示例：因本周运动打卡频次较高，建议补充高蛋白物资）
-
-### P4-T3 建议层次化
-- [x] 当日建议
-- [x] 本周建议
-- [x] 下周建议
-- [x] 明确依据数据引用
-
-### P4-T4 质量评估与调优
-- [x] 生成质量打分规则
-- [x] 低质量输出回退策略（模板兜底）
-- [x] 连续 3 轮真实场景演练
-
-**Phase 4 验收标准**
-- [x] 计划、采购、建议三套输出稳定可执行
-- [x] 输出具备“依据可解释性”
+- [x] P4-T1 下周计划生成器
+- [x] P4-T2 采购清单生成器
+- [x] P4-T3 建议层次化
+- [x] P4-T4 质量评分与兜底策略
+- [x] Phase 4 验收标准收口
 
 ---
 
-## Phase 5｜部署前回归与运营化
+## Phase 5｜发布前回归与运营化（已完成）
 
-### P5-T1 全链路回归
-- [x] 核心路径回归（聊天录入/计划生成/采购生成/撤销）
-- [x] 移动端交互回归
-- [x] 性能与异常兜底回归
+- [x] P5-T1 全链路回归
+- [x] P5-T2 运维观测（含 ai metrics）
+- [x] P5-T3 发布准备文档
+- [x] Phase 5 验收标准收口
 
-### P5-T2 运维与观测
-- [x] AI 请求日志看板（耗时/失败率）
-- [x] 错误分类与告警策略
-- [x] 用户操作审计可检索
+---
 
-### P5-T3 发布准备（仅准备，不推送）
-- [x] 发版清单补全
-- [x] 回滚方案验证
-- [x] 发布说明草案
+## Phase 6｜Beta 当前开发计划（进行中）
 
-**Phase 5 验收标准**
-- [x] 可进入可控上线窗口
-- [x] 回滚与审计完备
+### P6-T1 生成建议后的确认写入门禁（计划/采购）
+- [x] 聊天生成计划草案时返回 pending_confirm，不直接落库
+- [x] 聊天生成采购草案时返回 pending_confirm，不直接落库
+- [x] 确认后分别写入 weekly_plan / grocery_list
+- [x] 写入后返回结构化回执
+
+### P6-T2 多轮调整能力（建议层）
+- [ ] 用户可对草案提修改意见（不写库）
+- [ ] AI 返回更新草案并保持待确认状态
+- [ ] 连续多轮修改后仍可一次确认写入
+
+### P6-T3 前端交互一致性
+- [x] 前端确认逻辑从“仅医疗确认”扩展为“通用确认写入”
+- [ ] 计划/采购确认后页面自动刷新（无需手动刷新）
+- [ ] 回执与页面数据一致性校验
+
+### P6-T4 回归与验收
+- [ ] 补充 5 条端到端用例（生成→修改→确认→落库）
+- [ ] 补充异常用例（取消、无效确认、重复确认）
+- [ ] 输出 Beta 验收报告（可给董事长过目）
+
+**Phase 6 验收标准（目标）**
+- [ ] 聊天建议与页面数据具备“确认后写入”的一致闭环
+- [ ] 不再出现“聊天回复了但页面不更新且无回执”的黑箱行为
 
 ---
 
 ## 成果索引（Artifacts）
 
-> 规则：每新增一个成果文件，必须追加到此索引
-
 - `AI_AGENT_DEVELOPMENT_TODO.md`（本文件）
-- `docs/ai-agent/02-data-api-spec-v1.md`
-- `docs/ai-agent/03-write-policy-matrix-v1.md`
-- `docs/ai-agent/04-risk-guardrails-v1.md`
-- `docs/ai-agent/01-boundary-rules-v1.md`
-- `server/ai/types.ts`
-- `server/ai/tools.ts`
+- `DEVELOPMENT_PROGRESS.md`
+- `server.ts`
 - `server/ai/model.ts`
-- `server/ai/orchestrator.ts`
-- `server/ai/index.ts`
-- `server.ts`（新增 `/api/ai/chat`）
-- `scripts/ai-smoke-test.mjs`
 - `src/components/ai/AIAssistant.tsx`
-- `src/api.ts`（新增 aiChat/aiUndo）
-- `src/App.tsx`（接入小人入口）
-- `src/components/Dashboard.tsx`（新增今日/本周建议卡）
-- `src/components/WeeklyPlan.tsx`（接入 /api/ai/plan/generate + 一键应用）
-- `src/components/GroceryList.tsx`（接入 /api/ai/purchase/generate + 一键应用）
-- `server.ts`（新增 /api/ai/plan/generate 与 /api/ai/purchase/generate）
-- `src/api.ts`（新增 generateAiPlan / generateAiPurchase）
+- `src/components/WeeklyPlan.tsx`
+- `src/components/GroceryList.tsx`
+- `scripts/api-smoke-test.mjs`
+- `scripts/ai-smoke-test.mjs`
 
 ---
 
-## 开发日志（按天简记）
+## 验收口径（董事长视角）
 
-### 2026-03-21
-- [x] 确认 AI 主线方向（智能体化）
-- [x] 确认前端策略（单入口小人）
-- [x] 建立本地落盘 Todo 体系
-- [x] 完成数据模型/API清单 v1
-- [x] 完成写库权限矩阵 v1
-- [x] 完成医疗边界与风险护栏 v1
-- [x] 完成规则蓝图正式文档 v1（Phase 1 文档集齐）
-- [x] 完成 P2-T1：AI Orchestrator 基座（server/ai 模块）
-- [x] 完成 P2-T2（MVP）：`/api/ai/chat` + Function Calling 最小闭环
-- [x] 完成 P2-T2（增强）：多轮上下文（ai_sessions + ai_messages）
-- [x] 完成 P2-T3（阶段性）：growth/todo 真实写库 + ai_ops_log
-- [x] 完成 P2-T3：diagnosis_records + 医疗确认写入流
-- [x] 完成 P2-T4：`/api/ai/undo` 撤销回滚与审计补记
-- [x] 完成 P2-T5：AI 全链路冒烟（chat/write/confirm/undo）
-- [x] 完成 P3-T1：小人入口 + 聊天抽屉 + `/api/ai/chat` 联调
-- [x] 完成 P3-T2：结构化回执卡 + 医疗确认弹窗 + 撤销快捷入口
-- [x] 完成 P3-T3：总览建议卡 + 下周计划卡（一键应用）+ 采购建议卡（一键应用）
-- [x] 完成 P4-T1/T2/T3：后端计划/采购生成器 + 前端接入（/api/ai/plan/generate & /api/ai/purchase/generate）
-- [x] 本地验证：`npm run lint` 通过；`npm run build` 通过（产物含 Dashboard/WeeklyPlan/GroceryList 新 chunk）
-- [x] API 验证：
-  - /api/ai/plan/generate 返回 7 天 planData + tips
-  - /api/ai/purchase/generate 返回 must/recommended/optional + mergedListData
-  - /api/ai/undo 错误码：400 (缺 token) / 404 (not found) / 409 (重复撤销)
-  - 冒烟：BASE_URL=http://localhost:3400 `node scripts/api-smoke-test.mjs` 通过
-  - 集成验证（计划生成→采购生成→落库）通过
-- [x] Phase 4/5 回归与观测验证（2026-03-22）：
-  - `npm run lint` 通过
-  - `npm run build` 通过
-  - 核心链路：chat→plan.generate→purchase.generate→undo 全部 200
-  - `/api/ai/metrics?hours=24` 可返回总量、成功率、按 action 统计
-  - 质量评分：plan/purchase 均返回 score/level/reasons
-  - 移动端视口回归按发布清单执行（390x844 / 360x800）
-
+每次汇报按以下模板：
+1. 现象
+2. 证据
+3. 根因判断
+4. 修复动作
+5. 是否需要重测
