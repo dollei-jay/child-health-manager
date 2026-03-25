@@ -2,8 +2,13 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import dotenv from 'dotenv';
 import { createRequire } from 'module';
 import { createAiOrchestrator } from './server/ai/index.js';
+
+// 优先加载本地长期配置（.env.local），再回退 .env
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 
 fs.writeFileSync('trace.log', 'File loaded.\n');
 
@@ -221,9 +226,14 @@ async function startServer() {
         title TEXT,
         status TEXT DEFAULT 'active',
         lastMessageAt TEXT,
+        pendingType TEXT,
+        pendingPayload TEXT,
         createdAt TEXT,
         updatedAt TEXT
       )`);
+
+      db.run(`ALTER TABLE ai_sessions ADD COLUMN pendingType TEXT`, () => {});
+      db.run(`ALTER TABLE ai_sessions ADD COLUMN pendingPayload TEXT`, () => {});
 
       db.run(`CREATE TABLE IF NOT EXISTS ai_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -361,17 +371,52 @@ async function startServer() {
     }));
   };
 
+  const normalizePlanData = (input: any[]) => {
+    const fallback = createFallbackPlan();
+    const byId = new Map<string, any>((Array.isArray(input) ? input : []).map((d: any) => [String(d?.id || ''), d]));
+
+    return fallback.map((f: any) => {
+      const raw = byId.get(String(f.id)) || {};
+      return {
+        id: f.id,
+        day: raw?.day || f.day,
+        food: {
+          breakfast: String(raw?.food?.breakfast || f.food.breakfast),
+          lunch: String(raw?.food?.lunch || f.food.lunch),
+          snack: String(raw?.food?.snack || f.food.snack),
+          dinner: String(raw?.food?.dinner || f.food.dinner),
+          fruit: String(raw?.food?.fruit || f.food.fruit)
+        },
+        exercise: Array.isArray(raw?.exercise) && raw.exercise.length ? raw.exercise : f.exercise,
+        suggestion: String(raw?.suggestion || f.suggestion)
+      };
+    });
+  };
+
   const tunePlanByExecution = (basePlan: any[], totalCheckins: number, latestDiagnosisRisk: 'normal' | 'warning' | 'critical') => {
     const mode = totalCheckins >= 22 ? 'enhance' : totalCheckins >= 10 ? 'standard' : 'recovery';
 
+    const exerciseTemplates: Record<string, string[]> = {
+      mon: ['快走 30 分钟', '跳绳 10 分钟', '拉伸 10 分钟'],
+      tue: ['骑行/滑板车 35 分钟', '核心训练 10 分钟', '拉伸 10 分钟'],
+      wed: ['跑跳游戏 30 分钟', '球类练习 20 分钟', '拉伸 10 分钟'],
+      thu: ['快走 30 分钟', '摸高跳 10 分钟', '拉伸 10 分钟'],
+      fri: ['舞蹈/操课 30 分钟', '跳绳 10 分钟', '拉伸 10 分钟'],
+      sat: ['户外活动 60-90 分钟', '轻力量练习 10 分钟'],
+      sun: ['亲子步行 45 分钟', '柔韧训练 15 分钟']
+    };
+
     return basePlan.map((day: any, idx: number) => {
+      const dayId = String(day?.id || '');
       const exercise = Array.isArray(day?.exercise) ? day.exercise.filter((x: any) => String(x || '').trim()) : [];
+      const template = exerciseTemplates[dayId] || ['中等强度活动 40-60 分钟', '拉伸 10 分钟'];
+
       const tunedExercise =
         mode === 'enhance'
-          ? [...exercise.slice(0, 2), '补充核心/柔韧训练 10 分钟']
+          ? [...template.slice(0, 2), '补充核心/柔韧训练 10 分钟']
           : mode === 'recovery'
-            ? ['快走 30 分钟', '拉伸 10 分钟']
-            : [...exercise.slice(0, 2), '维持 40-60 分钟稳定活动'];
+            ? [template[0] || '快走 30 分钟', '拉伸 10 分钟']
+            : [...(exercise.length ? exercise.slice(0, 2) : template.slice(0, 2)), '维持 40-60 分钟稳定活动'];
 
       let suggestion = idx >= 5 ? '周末优先户外 + 早睡，不安排高糖零食。' : String(day?.suggestion || '保持执行节奏');
       if (latestDiagnosisRisk === 'warning') suggestion += '（近期有医疗提醒，关注作息和复查）';
@@ -385,6 +430,224 @@ async function startServer() {
         suggestion
       };
     });
+  };
+
+  const formatPlanPreview = (planData: any[]) => {
+    if (!Array.isArray(planData) || planData.length === 0) return '（草案为空）';
+    return planData
+      .slice(0, 7)
+      .map((d: any) => {
+        const day = String(d?.day || d?.id || '某日');
+        const breakfast = String(d?.food?.breakfast || '早餐按常规');
+        const dinner = String(d?.food?.dinner || '晚餐按常规');
+        const ex = Array.isArray(d?.exercise) ? d.exercise.slice(0, 2).join('、') : '适量运动';
+        return `- ${day}：早 ${breakfast}｜晚 ${dinner}｜运动 ${ex}`;
+      })
+      .join('\n');
+  };
+
+  const formatGroceryPreview = (listData: any) => {
+    const l = listData && typeof listData === 'object' ? listData : {};
+    const pick = (k: string) => (Array.isArray(l[k]) ? l[k].slice(0, 4).join('、') : '无');
+    return [
+      `- 蔬菜：${pick('vegetables')}`,
+      `- 蛋白：${pick('protein')}`,
+      `- 主食：${pick('carbs')}`,
+      `- 水果：${pick('fruits')}`
+    ].join('\n');
+  };
+
+  const parseGrowthFromMessage = (text: string) => {
+    const t = String(text || '').trim();
+    const m1 = /(?:身高|高)\s*(\d{2,3}(?:\.\d{1,2})?)\s*(?:cm|厘米)?[，,\s]*.*(?:体重|重)\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:kg|公斤)?/i.exec(t);
+    if (m1) return { heightCm: Number(m1[1]), weightKg: Number(m1[2]) };
+    const m2 = /(?:体重|重)\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:kg|公斤)?[，,\s]*.*(?:身高|高)\s*(\d{2,3}(?:\.\d{1,2})?)\s*(?:cm|厘米)?/i.exec(t);
+    if (m2) return { heightCm: Number(m2[2]), weightKg: Number(m2[1]) };
+    return null;
+  };
+
+  const extractExercisePlanFromText = (text: string) => {
+    const dayMap: Record<string, string> = {
+      '周一': 'mon',
+      '周二': 'tue',
+      '周三': 'wed',
+      '周四': 'thu',
+      '周五': 'fri',
+      '周六': 'sat',
+      '周日': 'sun',
+      '周天': 'sun'
+    };
+
+    const src = String(text || '').replace(/\\n/g, '\n');
+    const result: Record<string, string[]> = {};
+
+    const normalizeItems = (raw: string) =>
+      String(raw || '')
+        .replace(/^[-\s#：:]+/, '')
+        .replace(/\*+/g, '')
+        .split('作用')[0]
+        .split(/[+＋、，,]/)
+        .map((s) => s.replace(/^[-\s]+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 3);
+
+    // 1) 单日明确格式：周一：xxx
+    const reSingle = /(周[一二三四五六日天])\s*[：:]\s*([^\n]+)/g;
+    let m: RegExpExecArray | null = null;
+    while ((m = reSingle.exec(src)) !== null) {
+      const dayId = dayMap[m[1]];
+      const items = normalizeItems(m[2]);
+      if (dayId && items.length) result[dayId] = items;
+    }
+
+    // 2) 组合日格式：周一、周三、周五 - xxx
+    const reGroup = /(周[一二三四五六日天](?:、周[一二三四五六日天])*)\s*(?:：|:|-|—)\s*([^\n]+)/g;
+    while ((m = reGroup.exec(src)) !== null) {
+      const days = String(m[1]).split('、').map((d) => d.trim()).filter(Boolean);
+      const items = normalizeItems(m[2]);
+      if (!items.length) continue;
+      days.forEach((d) => {
+        const dayId = dayMap[d];
+        if (dayId) result[dayId] = items;
+      });
+    }
+
+    return result;
+  };
+
+  const parsePendingDraft = (pendingType: any, pendingPayload: any) => {
+    const type = String(pendingType || '').trim();
+    if (!type || !pendingPayload) return null;
+    try {
+      const payload = typeof pendingPayload === 'string' ? JSON.parse(pendingPayload) : pendingPayload;
+      if (type === 'apply_weekly_plan' && Array.isArray(payload)) {
+        return { type, payload };
+      }
+      if (type === 'apply_grocery_list' && payload && typeof payload === 'object') {
+        return { type, payload };
+      }
+      if (type === 'clear_data' && payload && Array.isArray(payload?.targets)) {
+        return { type, payload };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
+  const applyDraftEdit = (draft: { type: string; payload: any }, message: string) => {
+    const text = String(message || '').trim();
+    const dayMap: Record<string, string> = {
+      '周一': 'mon',
+      '周二': 'tue',
+      '周三': 'wed',
+      '周四': 'thu',
+      '周五': 'fri',
+      '周六': 'sat',
+      '周日': 'sun',
+      '周天': 'sun'
+    };
+
+    if (draft.type === 'apply_weekly_plan') {
+      const plan = Array.isArray(draft.payload) ? JSON.parse(JSON.stringify(draft.payload)) : [];
+      const dayMatch = /(周[一二三四五六日天])/.exec(text);
+      const dayId = dayMatch ? dayMap[dayMatch[1]] : '';
+      const targetDays = dayId ? plan.filter((d: any) => d?.id === dayId) : plan;
+      if (!targetDays.length) return { changed: false, payload: draft.payload, note: '请明确哪一天（如：周三）。' };
+
+      const replaceExercise = /(?:运动|锻炼).*(?:改成|换成|替换为?)\s*([^，。]+)/.exec(text);
+      if (replaceExercise?.[1]) {
+        targetDays.forEach((day: any) => {
+          day.exercise = [String(replaceExercise[1]).trim()];
+        });
+        return { changed: true, payload: plan, note: dayId ? `${dayMatch?.[1]}运动已更新。` : '全周运动已更新。' };
+      }
+
+      if (/运动.*(单一|太少|不够|丰富|多样)/.test(text) || /(运动类型).*调整/.test(text)) {
+        const templates: Record<string, string[]> = {
+          mon: ['快走 30 分钟', '跳绳 10 分钟', '拉伸 10 分钟'],
+          tue: ['骑行/滑板车 35 分钟', '核心训练 10 分钟', '拉伸 10 分钟'],
+          wed: ['跑跳游戏 30 分钟', '球类练习 20 分钟', '拉伸 10 分钟'],
+          thu: ['快走 30 分钟', '摸高跳 10 分钟', '拉伸 10 分钟'],
+          fri: ['舞蹈/操课 30 分钟', '跳绳 10 分钟', '拉伸 10 分钟'],
+          sat: ['户外活动 60-90 分钟', '轻力量练习 10 分钟'],
+          sun: ['亲子步行 45 分钟', '柔韧训练 15 分钟']
+        };
+        targetDays.forEach((day: any) => {
+          const id = String(day?.id || '');
+          day.exercise = templates[id] || ['中等强度活动 40-60 分钟', '拉伸 10 分钟'];
+        });
+        return { changed: true, payload: plan, note: dayId ? `${dayMatch?.[1]}运动已改为多样化方案。` : '已将全周运动改为多样化方案。' };
+      }
+
+      const addExercise = /(?:运动|锻炼).*(?:加|增加|补充)\s*([^，。]+)/.exec(text);
+      if (addExercise?.[1]) {
+        const item = String(addExercise[1]).trim();
+        targetDays.forEach((day: any) => {
+          const old = Array.isArray(day.exercise) ? day.exercise : [];
+          day.exercise = Array.from(new Set([...old, item]));
+        });
+        return { changed: true, payload: plan, note: dayId ? `${dayMatch?.[1]}运动已补充。` : '全周运动已补充。' };
+      }
+
+      const mealReplaceGeneral = /(清蒸鱼|鸡胸肉|鸡蛋|牛奶|无糖酸奶|燕麦|西兰花|青菜|豆腐).*(?:换成|替换为?)\s*([^，。]+)/.exec(text);
+      if (mealReplaceGeneral?.[1] && mealReplaceGeneral?.[2]) {
+        const from = String(mealReplaceGeneral[1]).trim();
+        const to = String(mealReplaceGeneral[2]).trim();
+        targetDays.forEach((day: any) => {
+          day.food = day.food && typeof day.food === 'object' ? day.food : {};
+          ['breakfast', 'lunch', 'snack', 'dinner', 'fruit'].forEach((k) => {
+            if (typeof day.food[k] === 'string') {
+              day.food[k] = String(day.food[k]).replaceAll(from, to);
+            }
+          });
+        });
+        return { changed: true, payload: plan, note: dayId ? `${dayMatch?.[1]}已将“${from}”替换为“${to}”。` : `全周已将“${from}”替换为“${to}”。` };
+      }
+
+      const mealMatch = /(早餐|午餐|加餐|晚餐|水果).*(?:改成|换成|替换为?)\s*([^，。]+)/.exec(text);
+      if (mealMatch?.[1] && mealMatch?.[2]) {
+        const keyMap: Record<string, string> = { 早餐: 'breakfast', 午餐: 'lunch', 加餐: 'snack', 晚餐: 'dinner', 水果: 'fruit' };
+        const foodKey = keyMap[mealMatch[1]];
+        targetDays.forEach((day: any) => {
+          day.food = day.food && typeof day.food === 'object' ? day.food : {};
+          day.food[foodKey] = String(mealMatch[2]).trim();
+        });
+        return { changed: true, payload: plan, note: dayId ? `${dayMatch?.[1]}${mealMatch[1]}已更新。` : `全周${mealMatch[1]}已更新。` };
+      }
+
+      return { changed: false, payload: draft.payload, note: '已识别为计划草案调整，但未命中结构化规则。可直接说“全周运动改为多样化”或“把清蒸鱼换成番茄牛肉”。' };
+    }
+
+    if (draft.type === 'apply_grocery_list') {
+      const list = draft.payload && typeof draft.payload === 'object' ? JSON.parse(JSON.stringify(draft.payload)) : {};
+      const catMap: Record<string, string> = { 蔬菜: 'vegetables', 蛋白: 'protein', 主食: 'carbs', 水果: 'fruits' };
+      const catMatch = /(蔬菜|蛋白|主食|水果)/.exec(text);
+      const cat = catMatch ? catMap[catMatch[1]] : '';
+      const splitItems = (raw: string) => String(raw || '').split(/[、,，]/).map((s) => s.trim()).filter(Boolean);
+
+      if (cat && /(?:加|增加|补充)/.test(text)) {
+        const itemMatch = /(?:加|增加|补充)\s*([^，。]+)/.exec(text);
+        if (!itemMatch?.[1]) return { changed: false, payload: draft.payload, note: '请提供要补充的食材。' };
+        const toAdd = splitItems(itemMatch[1]);
+        const old = Array.isArray(list[cat]) ? list[cat] : [];
+        list[cat] = Array.from(new Set([...old, ...toAdd]));
+        return { changed: true, payload: list, note: `${catMatch?.[1]}清单已补充。` };
+      }
+
+      if (cat && /(?:删|删除|去掉|不要)/.test(text)) {
+        const itemMatch = /(?:删|删除|去掉|不要)\s*([^，。]+)/.exec(text);
+        if (!itemMatch?.[1]) return { changed: false, payload: draft.payload, note: '请提供要删除的食材。' };
+        const toRemove = splitItems(itemMatch[1]);
+        const old = Array.isArray(list[cat]) ? list[cat] : [];
+        list[cat] = old.filter((i: string) => !toRemove.some((r) => i.includes(r)));
+        return { changed: true, payload: list, note: `${catMatch?.[1]}清单已删除指定项。` };
+      }
+
+      return { changed: false, payload: draft.payload, note: '已识别为采购草案调整，但未命中结构化规则。请用“蔬菜增加西兰花、番茄”这类表达。' };
+    }
+
+    return { changed: false, payload: draft.payload, note: '暂不支持该草案类型。' };
   };
 
   // Basic login rate limit (in-memory)
@@ -1485,6 +1748,105 @@ async function startServer() {
       db.all(sql, params, (err: any, rows: any[]) => (err ? reject(err) : resolve(rows || [])));
     });
 
+  const buildChildContextSnapshot = async (userId: number, childProfileId?: number) => {
+    if (!childProfileId) {
+      return { available: false, reason: 'no child selected' };
+    }
+
+    const growthRows = await dbAllP(
+      `SELECT date, height, weight, bmi FROM growth_records WHERE userId = ? AND childProfileId = ? ORDER BY date DESC LIMIT 12`,
+      [userId, childProfileId]
+    );
+
+    const todoRows = await dbAllP(
+      `SELECT text, completed, priority, dueDate FROM todos WHERE userId = ? AND childProfileId = ? ORDER BY createdAt DESC LIMIT 80`,
+      [userId, childProfileId]
+    );
+
+    const checklistRow = await dbGetP(
+      `SELECT checkedItems FROM checklist WHERE userId = ? AND childProfileId = ? LIMIT 1`,
+      [userId, childProfileId]
+    );
+
+    const weeklyPlanRow = await dbGetP(
+      `SELECT planData, updatedAt FROM weekly_plan WHERE userId = ? AND childProfileId = ? LIMIT 1`,
+      [userId, childProfileId]
+    );
+
+    const groceryRow = await dbGetP(
+      `SELECT listData, updatedAt FROM grocery_list WHERE userId = ? AND childProfileId = ? LIMIT 1`,
+      [userId, childProfileId]
+    );
+
+    const reviewRow = await dbGetP(
+      `SELECT weekStart, summary, blockers, nextFocus, score, updatedAt FROM weekly_reviews WHERE userId = ? ORDER BY weekStart DESC LIMIT 1`,
+      [userId]
+    );
+
+    const diagnosisRow = await dbGetP(
+      `SELECT visitDate, riskFlag, diagnosisText, adviceText FROM diagnosis_records WHERE userId = ? AND childProfileId = ? ORDER BY COALESCE(visitDate, createdAt) DESC, id DESC LIMIT 1`,
+      [userId, childProfileId]
+    );
+
+    const growth = Array.isArray(growthRows) ? growthRows : [];
+    const latestGrowth = growth[0] || null;
+    const prevGrowth = growth[1] || null;
+
+    const weightDelta = latestGrowth && prevGrowth ? toFixedMaybe(Number(latestGrowth.weight) - Number(prevGrowth.weight), 2) : null;
+    const heightDelta = latestGrowth && prevGrowth ? toFixedMaybe(Number(latestGrowth.height) - Number(prevGrowth.height), 2) : null;
+
+    const todos = Array.isArray(todoRows) ? todoRows : [];
+    const doneCount = todos.filter((t: any) => Number(t?.completed) === 1).length;
+    const openCount = todos.filter((t: any) => Number(t?.completed) !== 1).length;
+    const highOpen = todos.filter((t: any) => Number(t?.completed) !== 1 && String(t?.priority || '') === 'high').length;
+
+    const checklistData = parseMaybeJson(checklistRow?.checkedItems, {});
+    const today = startOfDay(new Date());
+    const since = new Date(today);
+    since.setDate(today.getDate() - 6);
+
+    const checkins7d = Object.entries(checklistData || {}).filter(([k, v]) => {
+      if (!v || typeof k !== 'string') return false;
+      const ds = k.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) return false;
+      const d = startOfDay(new Date(ds));
+      return d >= since && d <= today;
+    }).length;
+
+    const planData = parseMaybeJson(weeklyPlanRow?.planData, []);
+    const groceryData = parseMaybeJson(groceryRow?.listData, {});
+
+    return {
+      available: true,
+      generatedAt: new Date().toISOString(),
+      growth: {
+        latest: latestGrowth,
+        previous: prevGrowth,
+        trendFromLast: { heightCm: heightDelta, weightKg: weightDelta },
+        sampleCount: growth.length
+      },
+      todos: {
+        openCount,
+        doneCount,
+        highPriorityOpen: highOpen,
+        recentOpenTop: todos.filter((t: any) => Number(t?.completed) !== 1).slice(0, 5).map((t: any) => ({ text: t.text, priority: t.priority, dueDate: t.dueDate }))
+      },
+      checklist: {
+        checkins7d
+      },
+      weeklyPlan: {
+        updatedAt: weeklyPlanRow?.updatedAt || null,
+        taskCount: countWeeklyPlanTasks(Array.isArray(planData) ? planData : [])
+      },
+      grocery: {
+        updatedAt: groceryRow?.updatedAt || null,
+        itemCount: countGroceryItems(groceryData || {})
+      },
+      latestReview: reviewRow || null,
+      latestDiagnosis: diagnosisRow || null
+    };
+  };
+
   const buildRemindersForUser = async (userId: number) => {
     const selectedChildId = await getSelectedChildId(userId);
     if (!selectedChildId) {
@@ -1687,6 +2049,25 @@ async function startServer() {
     }
   });
 
+  app.get('/api/ai/status', authenticateToken, (req: any, res) => {
+    const provider = String(process.env.AI_PROVIDER || '').trim();
+    const configured =
+      provider === 'openai-compatible' &&
+      !!String(process.env.AI_BASE_URL || '').trim() &&
+      !!String(process.env.AI_MODEL || '').trim() &&
+      !!String(process.env.AI_API_KEY || '').trim();
+
+    if (!configured) {
+      return res.json({
+        configured: false,
+        provider: provider || 'unset',
+        message: '未配置大模型API，请在环境变量中配置 AI_PROVIDER / AI_BASE_URL / AI_MODEL / AI_API_KEY。'
+      });
+    }
+
+    return res.json({ configured: true, provider, message: '大模型已配置。' });
+  });
+
   // AI Chat (Phase 2 MVP)
   app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
     const message = String(req.body?.message || '').trim();
@@ -1781,12 +2162,24 @@ async function startServer() {
         confirmedMedicalWrite: Boolean(req.body?.confirmMedicalWrite)
       };
 
-      const directFunctionCall = req.body?.functionCall && typeof req.body.functionCall?.name === 'string'
+      let directFunctionCall = req.body?.functionCall && typeof req.body.functionCall?.name === 'string'
         ? {
             name: String(req.body.functionCall.name),
             arguments: typeof req.body.functionCall.arguments === 'object' ? req.body.functionCall.arguments : {}
           }
         : null;
+
+      const sessionPendingRow = await new Promise<any>((resolve, reject) => {
+        db.get(
+          `SELECT pendingType, pendingPayload FROM ai_sessions WHERE id = ? AND userId = ? LIMIT 1`,
+          [resolvedSessionId, req.user.id],
+          (err: any, row: any) => {
+            if (err) return reject(err);
+            resolve(row || null);
+          }
+        );
+      });
+      const pendingDraft = parsePendingDraft(sessionPendingRow?.pendingType, sessionPendingRow?.pendingPayload);
 
       const profileHint = childProfile
         ? [
@@ -1798,12 +2191,233 @@ async function startServer() {
           ].join('\n')
         : '【孩子档案缺失】如需年龄/性别可补问。';
 
-      const wantsWeeklyPlan = /(生成|做|安排).*(一周计划|周计划)|一周计划.*(生成|做|安排)/.test(message);
-      const wantsGrocery = /(生成|做|整理).*(采购清单|采购列表|买菜清单)|采购清单.*(生成|做|整理)/.test(message);
+      const contextSnapshot = await buildChildContextSnapshot(req.user.id, childProfileId);
+      const contextHint = [
+        '【近期数据快照（用于建议个性化）】',
+        JSON.stringify(contextSnapshot)
+      ].join('\n');
+
+      const assistantHistoryText = history
+        .filter((item: any) => item?.role === 'assistant')
+        .map((item: any) => String(item?.content || ''))
+        .join('\n');
+      const latestUserText = [...history].reverse().find((item: any) => item?.role === 'user')?.content || '';
+      const sourceTextForSuggestion = [String(assistantHistoryText || ''), String(latestUserText || ''), String(message || '')].join('\n');
+
+      const wantsWeeklyPlan = /(生成|做|安排).*(一周计划|周计划|计划)|(?:一周计划|周计划|计划).*(生成|做|安排)/.test(message);
+      const wantsGrocery = /(生成|做|整理).*(采购清单|采购列表|买菜清单|清单)|(?:采购清单|采购列表|买菜清单|清单).*(生成|做|整理)/.test(message);
+      const wantsConfirmPending = /^(确认|确认写入|可以写入|同意写入|就按这个写入|确定|确认清空)$/i.test(message);
+      const wantsCancelPending = /(取消|不用写入|不写入|先不写入)/.test(message);
+      const wantsClearPlan = /(清空|删除|重置).*(一周计划|周计划|计划)/.test(message);
+      const wantsClearGrocery = /(清空|删除|重置).*(采购清单|采购列表|买菜清单|清单|物资)/.test(message);
+      const wantsClearBoth = /(清空|删除|重置).*(所有|全部).*(计划|清单)|同时清空/.test(message);
+      const growthInput = parseGrowthFromMessage(message);
+      const suggestedExerciseMap = extractExercisePlanFromText(sourceTextForSuggestion);
+
+      const todoAddMatch = /^(?:新增待办|添加待办|记个待办|新增一个待办|添加一个待办)\s*[:：]?\s*(.+)$/.exec(message);
+      const todoDeleteMatch = /^(?:删除待办|移除待办)\s*[:：]?\s*(.+)$/.exec(message);
+      const todoDoneMatch = /^(?:完成待办|标记待办完成)\s*[:：]?\s*(.+)$/.exec(message);
+      const todoUpdateMatch = /^(?:修改待办|更新待办)\s*[:：]?\s*(.+?)\s*(?:=>|->|改为)\s*(.+)$/.exec(message);
+
+      const growthDeleteMatch = /(?:删除生长记录|删除成长记录)\s*[:：]?\s*(\d{4}-\d{2}-\d{2})/.exec(message);
+      const growthUpdateMatch = /(?:修改生长记录|更新生长记录)\s*[:：]?\s*(\d{4}-\d{2}-\d{2}).*?(?:身高|高)\s*(\d{2,3}(?:\.\d{1,2})?).*?(?:体重|重)\s*(\d{1,3}(?:\.\d{1,2})?)/.exec(message);
 
       let reply: any;
 
-      if (wantsWeeklyPlan && !directFunctionCall) {
+      if (!directFunctionCall && !pendingDraft && todoAddMatch?.[1] && !todoDeleteMatch && !todoDoneMatch && !todoUpdateMatch) {
+        const text = String(todoAddMatch[1]).trim().replace(/^[:：\s]+/, '').slice(0, 200);
+        const persisted = await aiOrchestrator.runFunctionCall({
+          context,
+          functionCall: { name: 'add_todo', arguments: { text, priority: 'medium' } },
+          answer: `已新增待办：${text}`
+        });
+        reply = {
+          ...persisted,
+          riskLevel: 'low'
+        };
+      } else if (!directFunctionCall && !pendingDraft && (todoDeleteMatch?.[1] || todoDoneMatch?.[1] || todoUpdateMatch)) {
+        const selectedChild = childProfileId || null;
+        const findOpenTodo = async (keyword: string) => {
+          const kw = `%${String(keyword || '').trim()}%`;
+          return dbGetP(
+            `SELECT id, text, completed, priority, dueDate FROM todos WHERE userId = ? AND childProfileId = ? AND text LIKE ? ORDER BY createdAt DESC LIMIT 1`,
+            [req.user.id, selectedChild, kw]
+          );
+        };
+
+        if (todoDeleteMatch?.[1]) {
+          const row = await findOpenTodo(todoDeleteMatch[1]);
+          if (!row?.id) {
+            reply = { summary: '未找到匹配待办', assistant: '未找到要删除的待办，请给更准确关键词。', actions: [{ type: 'todo_delete', status: 'blocked', reason: 'not found' }], cards: [], riskLevel: 'low' };
+          } else {
+            await new Promise<void>((resolve, reject) => {
+              db.run(`DELETE FROM todos WHERE id = ? AND userId = ? AND childProfileId = ?`, [row.id, req.user.id, selectedChild], (err: any) => (err ? reject(err) : resolve()));
+            });
+            reply = { summary: '待办已删除', assistant: `已删除待办：${row.text}`, actions: [{ type: 'todo_delete', status: 'done', summary: 'todo 已删除' }], cards: [{ type: 'write_receipt', title: '写入回执', data: { target: 'todos', action: 'delete', id: row.id } }], riskLevel: 'low' };
+          }
+        } else if (todoDoneMatch?.[1]) {
+          const row = await findOpenTodo(todoDoneMatch[1]);
+          if (!row?.id) {
+            reply = { summary: '未找到匹配待办', assistant: '未找到要完成的待办，请给更准确关键词。', actions: [{ type: 'todo_complete', status: 'blocked', reason: 'not found' }], cards: [], riskLevel: 'low' };
+          } else {
+            await new Promise<void>((resolve, reject) => {
+              db.run(`UPDATE todos SET completed = 1 WHERE id = ? AND userId = ? AND childProfileId = ?`, [row.id, req.user.id, selectedChild], (err: any) => (err ? reject(err) : resolve()));
+            });
+            reply = { summary: '待办已标记完成', assistant: `已标记完成：${row.text}`, actions: [{ type: 'todo_complete', status: 'done', summary: 'todo 已完成' }], cards: [{ type: 'write_receipt', title: '写入回执', data: { target: 'todos', action: 'complete', id: row.id } }], riskLevel: 'low' };
+          }
+        } else if (todoUpdateMatch) {
+          const src = String(todoUpdateMatch[1] || '').trim();
+          const dst = String(todoUpdateMatch[2] || '').trim().slice(0, 200);
+          const row = await findOpenTodo(src);
+          if (!row?.id) {
+            reply = { summary: '未找到匹配待办', assistant: '未找到要修改的待办，请给更准确关键词。', actions: [{ type: 'todo_update', status: 'blocked', reason: 'not found' }], cards: [], riskLevel: 'low' };
+          } else {
+            await new Promise<void>((resolve, reject) => {
+              db.run(`UPDATE todos SET text = ? WHERE id = ? AND userId = ? AND childProfileId = ?`, [dst, row.id, req.user.id, selectedChild], (err: any) => (err ? reject(err) : resolve()));
+            });
+            reply = { summary: '待办已修改', assistant: `已将待办改为：${dst}`, actions: [{ type: 'todo_update', status: 'done', summary: 'todo 已更新' }], cards: [{ type: 'write_receipt', title: '写入回执', data: { target: 'todos', action: 'update', id: row.id } }], riskLevel: 'low' };
+          }
+        }
+      } else if (!directFunctionCall && !pendingDraft && (growthDeleteMatch || growthUpdateMatch)) {
+        const selectedChild = childProfileId || null;
+        if (growthDeleteMatch?.[1]) {
+          const date = growthDeleteMatch[1];
+          await new Promise<void>((resolve, reject) => {
+            db.run(`DELETE FROM growth_records WHERE userId = ? AND childProfileId = ? AND date = ?`, [req.user.id, selectedChild, date], (err: any) => (err ? reject(err) : resolve()));
+          });
+          reply = { summary: '生长记录已删除', assistant: `已删除 ${date} 的生长记录。`, actions: [{ type: 'growth_delete', status: 'done', summary: 'growth 已删除' }], cards: [{ type: 'write_receipt', title: '写入回执', data: { target: 'growth_records', action: 'delete', date } }], riskLevel: 'low' };
+        } else if (growthUpdateMatch) {
+          const date = growthUpdateMatch[1];
+          const h = Number(growthUpdateMatch[2]);
+          const w = Number(growthUpdateMatch[3]);
+          const b = h > 0 ? Number((w / Math.pow(h / 100, 2)).toFixed(1)) : null;
+          await new Promise<void>((resolve, reject) => {
+            db.run(`UPDATE growth_records SET height = ?, weight = ?, bmi = ? WHERE userId = ? AND childProfileId = ? AND date = ?`, [Number(h.toFixed(1)), Number(w.toFixed(1)), b, req.user.id, selectedChild, date], (err: any) => (err ? reject(err) : resolve()));
+          });
+          reply = { summary: '生长记录已更新', assistant: `已更新 ${date}：身高 ${h} cm，体重 ${w} kg。`, actions: [{ type: 'growth_update', status: 'done', summary: 'growth 已更新' }], cards: [{ type: 'write_receipt', title: '写入回执', data: { target: 'growth_records', action: 'update', date } }], riskLevel: 'low' };
+        }
+      } else if (!directFunctionCall && !pendingDraft && (wantsClearBoth || wantsClearPlan || wantsClearGrocery)) {
+        const targets = wantsClearBoth
+          ? ['weekly_plan', 'grocery_list']
+          : [wantsClearPlan ? 'weekly_plan' : null, wantsClearGrocery ? 'grocery_list' : null].filter(Boolean) as string[];
+
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = ?, pendingPayload = ?, updatedAt = ? WHERE id = ?`,
+            ['clear_data', JSON.stringify({ targets }), new Date().toISOString(), resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        const labels = targets.map((t) => (t === 'weekly_plan' ? '一周计划' : '采购清单')).join('、');
+        reply = {
+          summary: '已进入清空确认流程',
+          assistant: `这是高风险操作：将清空 ${labels}。请回复“确认清空”继续，或回复“取消”。`,
+          actions: [{ type: 'clear_data', status: 'pending_confirm', summary: `待确认清空：${labels}` }],
+          cards: [
+            {
+              type: 'pending_write',
+              title: '待确认：清空数据',
+              data: {
+                pendingConfirm: true,
+                functionCall: { name: 'clear_data', arguments: { targets } }
+              }
+            }
+          ],
+          riskLevel: 'high'
+        };
+      } else if (!directFunctionCall && growthInput) {
+        const measuredAt = new Date().toISOString().slice(0, 10);
+        const persisted = await aiOrchestrator.runFunctionCall({
+          context,
+          functionCall: {
+            name: 'update_growth',
+            arguments: {
+              heightCm: growthInput.heightCm,
+              weightKg: growthInput.weightKg,
+              measuredAt
+            }
+          },
+          answer: `已为你记录：身高 ${growthInput.heightCm} cm，体重 ${growthInput.weightKg} kg。`
+        });
+
+        reply = {
+          ...persisted,
+          riskLevel: 'low'
+        };
+      } else if (!directFunctionCall && pendingDraft && wantsCancelPending) {
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = NULL, pendingPayload = NULL, updatedAt = ? WHERE id = ?`,
+            [new Date().toISOString(), resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        reply = {
+          summary: '已取消待确认草案',
+          assistant: '已取消本次待确认草案，不会写入页面数据。你可以重新让我生成。',
+          actions: [{ type: 'pending_write', status: 'skipped', summary: '已取消写入' }],
+          cards: [],
+          riskLevel: 'low'
+        };
+      } else if (!directFunctionCall && pendingDraft && wantsConfirmPending) {
+        directFunctionCall = {
+          name: pendingDraft.type,
+          arguments: pendingDraft.type === 'apply_weekly_plan'
+            ? { planData: pendingDraft.payload }
+            : pendingDraft.type === 'apply_grocery_list'
+              ? { listData: pendingDraft.payload }
+              : pendingDraft.payload
+        };
+        reply = {
+          summary: '收到确认，正在写入',
+          assistant: pendingDraft.type === 'clear_data' ? '已收到确认，正在执行清空…' : '已收到确认，正在写入页面数据…',
+          actions: [
+            { type: pendingDraft.type, status: 'pending_confirm', summary: '确认通过，开始执行' }
+          ],
+          cards: [],
+          riskLevel: pendingDraft.type === 'clear_data' ? 'high' : 'low'
+        };
+      } else if (!directFunctionCall && pendingDraft) {
+        const edited = applyDraftEdit(pendingDraft, message);
+        const nextType = pendingDraft.type;
+        const nextPayload = edited.payload;
+
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = ?, pendingPayload = ?, updatedAt = ? WHERE id = ?`,
+            [nextType, JSON.stringify(nextPayload), new Date().toISOString(), resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        const previewText = nextType === 'apply_weekly_plan'
+          ? formatPlanPreview(nextPayload)
+          : formatGroceryPreview(nextPayload);
+
+        reply = {
+          summary: edited.changed ? '草案已按你的意见调整（待确认）' : '已收到草案调整请求（待确认）',
+          assistant: `${edited.note}\n\n当前草案预览：\n${previewText}\n\n当前仍是待确认草案，确认后才会写入页面数据。`,
+          actions: [
+            { type: nextType, status: 'pending_confirm', summary: '草案已更新，待确认写入' }
+          ],
+          cards: [
+            {
+              type: 'pending_write',
+              title: nextType === 'apply_weekly_plan' ? '待确认写入：一周计划（已调整）' : '待确认写入：采购清单（已调整）',
+              data: {
+                pendingConfirm: true,
+                functionCall: {
+                  name: nextType,
+                  arguments: nextType === 'apply_weekly_plan' ? { planData: nextPayload } : { listData: nextPayload }
+                }
+              }
+            }
+          ],
+          riskLevel: 'low'
+        };
+      } else if (wantsWeeklyPlan && !directFunctionCall) {
         const latestRiskRow = childProfileId
           ? await dbGetP(
               `SELECT riskFlag FROM diagnosis_records WHERE userId = ? AND childProfileId = ? ORDER BY COALESCE(visitDate, createdAt) DESC, id DESC LIMIT 1`,
@@ -1834,11 +2448,29 @@ async function startServer() {
         }).length;
 
         const basePlan = parseMaybeJson(planRow?.planData, createFallbackPlan());
-        const suggestedPlan = tunePlanByExecution(Array.isArray(basePlan) ? basePlan : createFallbackPlan(), totalCheckins7d, latestRisk);
+        const normalizedPlan = normalizePlanData(Array.isArray(basePlan) ? basePlan : createFallbackPlan());
+        const suggestedPlan = tunePlanByExecution(normalizedPlan, totalCheckins7d, latestRisk).map((d: any) => {
+          const picked = suggestedExerciseMap[String(d?.id || '')];
+          if (picked && picked.length) {
+            return { ...d, exercise: picked };
+          }
+          return d;
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = ?, pendingPayload = ?, updatedAt = ? WHERE id = ?`,
+            ['apply_weekly_plan', JSON.stringify(suggestedPlan), new Date().toISOString(), resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        const preview = formatPlanPreview(suggestedPlan);
+        const usedSuggestedSource = Object.keys(suggestedExerciseMap || {}).length > 0;
 
         reply = {
           summary: '已生成一周计划草案（待你确认写入）',
-          assistant: '我已生成一周计划草案。你可以先提修改意见；确认后我再写入到“一周计划”页面。',
+          assistant: `我已生成一周计划草案（预览如下）：\n${preview}\n\n依据说明：${usedSuggestedSource ? '已优先采用你上一轮建议里的分日运动安排。' : '未检测到可直接结构化复用的分日建议，本次基于近期数据快照生成。'}\n\n你可以先提修改意见；确认后我再写入到“一周计划”页面。`,
           actions: [
             { type: 'apply_weekly_plan', status: 'pending_confirm', summary: '待确认写入 weekly_plan' }
           ],
@@ -1874,9 +2506,19 @@ async function startServer() {
           fruits: Array.from(new Set([...fruits, '低糖水果 4-6份（苹果/梨/橙）'])).slice(0, 18)
         };
 
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = ?, pendingPayload = ?, updatedAt = ? WHERE id = ?`,
+            ['apply_grocery_list', JSON.stringify(mergedListData), new Date().toISOString(), resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        const preview = formatGroceryPreview(mergedListData);
+
         reply = {
           summary: '已生成采购清单草案（待你确认写入）',
-          assistant: '我已生成采购清单草案。你可以先提修改意见；确认后我再写入到“采购清单”页面。',
+          assistant: `我已生成采购清单草案（预览如下）：\n${preview}\n\n你可以先提修改意见；确认后我再写入到“采购清单”页面。`,
           actions: [
             { type: 'apply_grocery_list', status: 'pending_confirm', summary: '待确认写入 grocery_list' }
           ],
@@ -1909,6 +2551,10 @@ async function startServer() {
                   role: 'assistant',
                   content: profileHint
                 },
+                {
+                  role: 'assistant',
+                  content: contextHint
+                },
                 ...history
                   .filter((item: any) => item?.role === 'user' || item?.role === 'assistant')
                   .map((item: any) => ({ role: item.role, content: String(item.content || '') })),
@@ -1918,6 +2564,47 @@ async function startServer() {
                 }
               ]
             });
+      }
+
+      if (directFunctionCall?.name === 'clear_data') {
+        const targets = Array.isArray(directFunctionCall.arguments?.targets)
+          ? directFunctionCall.arguments.targets.filter((x: any) => ['weekly_plan', 'grocery_list'].includes(String(x)))
+          : [];
+        if (!targets.length) {
+          return res.status(400).json({ error: 'clear_data requires targets' });
+        }
+
+        const clearResults: any[] = [];
+        const runDelete = (sql: string, params: any[]) =>
+          new Promise<number>((resolve, reject) => {
+            db.run(sql, params, function (err: any) {
+              if (err) return reject(err);
+              resolve(Number(this.changes || 0));
+            });
+          });
+
+        if (targets.includes('weekly_plan')) {
+          const n = await runDelete(`DELETE FROM weekly_plan WHERE userId = ? AND childProfileId = ?`, [req.user.id, childProfileId || null]);
+          clearResults.push({ target: 'weekly_plan', deleted: n });
+        }
+        if (targets.includes('grocery_list')) {
+          const n = await runDelete(`DELETE FROM grocery_list WHERE userId = ? AND childProfileId = ?`, [req.user.id, childProfileId || null]);
+          clearResults.push({ target: 'grocery_list', deleted: n });
+        }
+
+        const updatedAt = new Date().toISOString();
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = NULL, pendingPayload = NULL, updatedAt = ? WHERE id = ?`,
+            [updatedAt, resolvedSessionId],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+
+        reply.assistant = `已执行清空：${clearResults.map((r) => `${r.target}(${r.deleted})`).join('，')}。`;
+        reply.actions = [{ type: 'clear_data', status: 'done', summary: '清空操作已完成' }];
+        reply.cards = [{ type: 'write_receipt', title: '清空回执', data: { targets, results: clearResults } }];
+        reply.riskLevel = 'high';
       }
 
       if (directFunctionCall?.name === 'apply_weekly_plan') {
@@ -1931,6 +2618,13 @@ async function startServer() {
             `INSERT INTO weekly_plan (userId, childProfileId, planData, updatedAt) VALUES (?, ?, ?, ?)
              ON CONFLICT(userId, childProfileId) DO UPDATE SET planData = excluded.planData, updatedAt = excluded.updatedAt`,
             [req.user.id, childProfileId || null, JSON.stringify(planData), updatedAt],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = NULL, pendingPayload = NULL, updatedAt = ? WHERE id = ?`,
+            [updatedAt, resolvedSessionId],
             (err: any) => (err ? reject(err) : resolve())
           );
         });
@@ -1950,6 +2644,13 @@ async function startServer() {
             `INSERT INTO grocery_list (userId, childProfileId, listData, updatedAt) VALUES (?, ?, ?, ?)
              ON CONFLICT(userId, childProfileId) DO UPDATE SET listData = excluded.listData, updatedAt = excluded.updatedAt`,
             [req.user.id, childProfileId || null, JSON.stringify(listData), updatedAt],
+            (err: any) => (err ? reject(err) : resolve())
+          );
+        });
+        await new Promise<void>((resolve, reject) => {
+          db.run(
+            `UPDATE ai_sessions SET pendingType = NULL, pendingPayload = NULL, updatedAt = ? WHERE id = ?`,
+            [updatedAt, resolvedSessionId],
             (err: any) => (err ? reject(err) : resolve())
           );
         });

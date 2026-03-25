@@ -6,6 +6,62 @@
 
 ---
 
+## 2026-03-26
+
+### 6) AI 交互重构与事务化执行（进行中，核心链路已可用）
+
+#### 6.1 已完成：大模型长期配置 + 启动稳定化
+- 服务启动时自动加载 `.env.local`（优先）+ `.env`（回退）。
+- `AI_PROVIDER / AI_BASE_URL / AI_MODEL / AI_API_KEY` 本地长期生效。
+
+**证据**
+- 启动日志可见 dotenv 注入环境变量。
+- `GET /api/ai/status` 返回 `configured: true`（在配置正确时）。
+
+#### 6.2 已完成：计划/采购草案预览 + 确认写入门禁
+- 计划、采购草案生成后均展示预览文本。
+- 维持 pending_confirm -> 确认后写库闭环。
+
+**证据**
+- `/api/ai/chat` 返回 `apply_weekly_plan/apply_grocery_list` 的 `pending_confirm`。
+- 确认后返回 `done`，对应表可读到更新数据。
+
+#### 6.3 已完成：高风险“清空数据”事务
+- 新增 `clear_data` 确认链路：
+  - 触发：清空计划/清空采购/同时清空
+  - 二次确认：`确认清空`
+  - 执行：删除 `weekly_plan` / `grocery_list`
+  - 回执：结构化写入回执（删除条数）
+
+**证据（E2E）**
+- step1: `pending_confirm`
+- step2: `done`
+- 清空后：`/api/weekly-plan` 与 `/api/grocery-list` 返回 null
+
+#### 6.4 已完成：生长记录自然语言新增/修改/删除
+- 新增：`今天身高130.5 体重28.3`
+- 修改：`修改生长记录：YYYY-MM-DD 身高X 体重Y`
+- 删除：`删除生长记录：YYYY-MM-DD`
+
+**证据（E2E）**
+- `growth_add / growth_update / growth_delete` 均返回 `done`。
+
+#### 6.5 已完成：待办自然语言 CRUD（最终分流修复）
+- 新增：`新增待办：...`
+- 完成：`完成待办：...`
+- 修改：`修改待办：A 改为 B`
+- 删除：`删除待办：...`
+
+**证据（E2E）**
+- `todo_add / todo_complete / todo_update / todo_delete` 均返回 `done`。
+- 最终 `todos_after` 与预期一致（可为空）。
+
+#### 6.6 当前待收口
+- 前端页面一致性需董事长实测确认（总览/详情页同步观察）。
+- 对“复杂自然语言全局改计划”仍可继续增强（已可用但需持续优化鲁棒性）。
+
+---
+
 ## 2026-03-23
 
 ### 1) 分支治理调整（已完成）

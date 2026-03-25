@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bot, CheckCircle2, MessageCircle, RotateCcw, Send, ShieldAlert, X } from 'lucide-react';
 import { api } from '../../api';
 
@@ -34,6 +34,7 @@ type ChatMessage = {
 interface AIAssistantProps {
   childName?: string;
   childProfileId?: number | null;
+  onDataWritten?: () => void;
 }
 
 const riskTone: Record<string, string> = {
@@ -42,7 +43,7 @@ const riskTone: Record<string, string> = {
   high: 'text-rose-700 bg-rose-50 border-rose-200'
 };
 
-export default function AIAssistant({ childName, childProfileId }: AIAssistantProps) {
+export default function AIAssistant({ childName, childProfileId, onDataWritten }: AIAssistantProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,10 +54,23 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
     }
   ]);
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const [statusChecked, setStatusChecked] = useState(false);
 
   const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
 
   const appendMessage = (msg: ChatMessage) => setMessages((prev) => [...prev, msg]);
+
+  useEffect(() => {
+    if (!open || statusChecked) return;
+    api.aiStatus()
+      .then((s) => {
+        if (!s?.configured) {
+          appendMessage({ role: 'assistant', content: String(s?.message || '未配置大模型API，请在环境变量中配置。'), status: 'error' });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setStatusChecked(true));
+  }, [open, statusChecked]);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -146,6 +160,14 @@ export default function AIAssistant({ childName, childProfileId }: AIAssistantPr
         cards,
         actions: Array.isArray(resp?.actions) ? resp.actions : []
       });
+
+      const wroteByAction = Array.isArray(resp?.actions) && resp.actions.some((a: any) =>
+        (a?.type === 'apply_weekly_plan' || a?.type === 'apply_grocery_list') && a?.status === 'done'
+      );
+      const wroteByCard = Array.isArray(cards) && cards.some((c) => c?.type === 'write_receipt');
+      if ((wroteByAction || wroteByCard) && typeof onDataWritten === 'function') {
+        onDataWritten();
+      }
     } catch (err: any) {
       appendMessage({ role: 'assistant', content: `确认写入失败：${err.message || '未知错误'}`, status: 'error' });
     }

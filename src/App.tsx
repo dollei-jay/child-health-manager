@@ -364,6 +364,7 @@ function App() {
       <AIAssistant
         childName={userProfile?.childName || childMeta.selectedName}
         childProfileId={Number(userProfile?.selectedChildId) || undefined}
+        onDataWritten={() => setContextVersion((v) => v + 1)}
       />
     </div>
   );

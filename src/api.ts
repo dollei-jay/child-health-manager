@@ -344,6 +344,15 @@ export const api = {
     return res.json();
   },
 
+  async aiStatus() {
+    const res = await fetch(`${API_URL}/ai/status`, { headers: headers() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch AI status');
+    }
+    return res.json();
+  },
+
   async aiChat(data: { message: string; sessionId?: number | null; childProfileId?: number; confirmMedicalWrite?: boolean; functionCall?: any }) {
     const res = await fetch(`${API_URL}/ai/chat`, {
       method: 'POST',
